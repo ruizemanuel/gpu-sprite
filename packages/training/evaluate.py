@@ -54,7 +54,7 @@ def evaluate_checkpoint(ckpt: Path, data_dir: Path = DATA_DIR, n_seeds: int = 10
         result["checks"]["reconstruction"] = {"value": None, "threshold": None, "op": "n/a", "passed": True, "note": "GAN objective: encoder untrained, reconstruction not applicable"}
         result["passed"] = all(c["passed"] for c in result["checks"].values())
     result.update({
-        "checkpoint": str(ckpt),
+        "checkpoint": Path(ckpt).as_posix(),
         "objective": objective,
         "seeds": n_seeds,
         "recon_acc": recon_acc,

@@ -68,6 +68,50 @@ def test_evaluate_checkpoint_end_to_end(tmp_path):
     assert result["recon_floor_source"] in ("first-promotion", "active")
 
 
-def test_skip_gate_refuses_src_path(tmp_path):
-    with pytest.raises(SystemExit):
-        export.main(["--checkpoint", str(tmp_path / "missing.pt"), "--skip-gate"])
+def test_skip_gate_refuses_src_path(tmp_path, capsys):
+    ckpt = tmp_path / "best.pt"
+    ckpt.write_bytes(b"not a real checkpoint")
+    with pytest.raises(SystemExit) as exc:
+        export.main(["--checkpoint", str(ckpt), "--skip-gate"])
+    assert exc.value.code == 2
+    assert "src/" in capsys.readouterr().err
+
+
+def test_export_refuses_reduced_seeds(tmp_path, capsys):
+    ckpt = tmp_path / "best.pt"
+    ckpt.write_bytes(b"not a real checkpoint")
+    with pytest.raises(SystemExit) as exc:
+        export.main(["--checkpoint", str(ckpt), "--seeds", "10"])
+    assert exc.value.code == 2
+    assert "--seeds" in capsys.readouterr().err
+
+
+def test_export_refuses_nonstandard_data_dir(tmp_path, capsys):
+    ckpt = tmp_path / "best.pt"
+    ckpt.write_bytes(b"not a real checkpoint")
+    with pytest.raises(SystemExit) as exc:
+        export.main(["--checkpoint", str(ckpt), "--data-dir", str(tmp_path / "other-data")])
+    assert exc.value.code == 2
+    assert "--data-dir" in capsys.readouterr().err
+
+
+def test_export_refuses_nonstandard_out(tmp_path, capsys):
+    ckpt = tmp_path / "best.pt"
+    ckpt.write_bytes(b"not a real checkpoint")
+    with pytest.raises(SystemExit) as exc:
+        export.main(["--checkpoint", str(ckpt), "--out", str(tmp_path / "candidate.ts")])
+    assert exc.value.code == 2
+    assert "--out" in capsys.readouterr().err
+
+
+def test_current_floor_uses_active_report_and_never_moves_with_a_new_measurement(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.9}}))
+    assert evaluate.current_floor(0.95) == (0.9, "active")
+
+
+def test_current_floor_without_active_report_is_measured_minus_margin(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    floor, source = evaluate.current_floor(0.95)
+    assert floor == pytest.approx(0.94)
+    assert source == "first-promotion"

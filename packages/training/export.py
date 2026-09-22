@@ -93,6 +93,17 @@ def main(argv: list[str]) -> int:
     if a.skip_gate and CORE_SRC in out.parents:
         print(f"--skip-gate cannot write inside {CORE_SRC}; pass --out with a path outside src/", file=sys.stderr)
         sys.exit(2)
+    if not a.skip_gate:
+        if a.seeds != 1000:
+            print(f"refusing to weaken the gate: --seeds must be 1000 for a real promotion, got {a.seeds}", file=sys.stderr)
+            sys.exit(2)
+        data_dir = Path(a.data_dir).resolve()
+        if data_dir != DATA_DIR.resolve():
+            print(f"refusing to weaken the gate: --data-dir must be {DATA_DIR}, got {data_dir}", file=sys.stderr)
+            sys.exit(2)
+        if out != DEFAULT_OUT.resolve():
+            print(f"refusing to weaken the gate: --out must be {DEFAULT_OUT}, got {out}", file=sys.stderr)
+            sys.exit(2)
     ckpt = Path(a.checkpoint)
     if not ckpt.exists():
         print(f"checkpoint not found: {ckpt}", file=sys.stderr)
@@ -116,7 +127,7 @@ def main(argv: list[str]) -> int:
     print(f"wrote {out} ({out.stat().st_size} bytes)")
 
     if a.skip_gate:
-        (out.parent / "parity.json").write_text(json.dumps(parity) + "\n")
+        (out.parent / "parity.json").write_text(json.dumps(parity) + "\n", newline="\n")
         print("candidate export; active/ not updated")
         return 0
 
@@ -124,7 +135,7 @@ def main(argv: list[str]) -> int:
     train_sha256 = hashlib.sha256(train_np.tobytes()).hexdigest()
     val_sha256 = hashlib.sha256(val_np.tobytes()).hexdigest()
     ACTIVE_DIR.mkdir(exist_ok=True)
-    (ACTIVE_DIR / "parity.json").write_text(json.dumps(parity) + "\n")
+    (ACTIVE_DIR / "parity.json").write_text(json.dumps(parity) + "\n", newline="\n")
     training_report = json.loads((ckpt.parent / "report.json").read_text()) if (ckpt.parent / "report.json").exists() else {}
     report = {
         "checkpoint": label,
@@ -136,7 +147,7 @@ def main(argv: list[str]) -> int:
         "quantization": {"scheme": "int8 symmetric per-tensor", "layers": [{"in": l["in"], "out": l["out"], "scale": float(l["scale"])} for l in qspec["layers"]]},
         "decoder_parameters": gate["decoder_parameters"],
     }
-    (ACTIVE_DIR / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    (ACTIVE_DIR / "report.json").write_text(json.dumps(report, indent=2) + "\n", newline="\n")
     manifest = {
         "checkpoint": label,
         "checkpoint_sha256": sha256_file(ckpt),
@@ -146,7 +157,7 @@ def main(argv: list[str]) -> int:
         "parity_seeds": PARITY_SEEDS,
         "exported_at": report["exported_at"],
     }
-    (ACTIVE_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (ACTIVE_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", newline="\n")
     print(f"promoted {label}; active/ updated")
     return 0
 
