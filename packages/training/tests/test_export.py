@@ -6,8 +6,10 @@ import torch
 
 import evaluate
 import export
+import metrics
 import model
 import quantize
+import sprite
 import train
 from tests.test_train import synthetic
 
@@ -37,6 +39,9 @@ def test_build_parity_entries():
     assert e["seed"] == 1 and len(e["z"]) == 32 and len(e["logits"]) == 256 and len(e["bits"]) == 64
     bits = np.unpackbits(np.frombuffer(bytes.fromhex(e["bits"]), dtype=np.uint8))
     assert np.array_equal(bits, (np.array(e["logits"]) > 0).astype(np.uint8))
+    assert len(e["sprite"]) == 64
+    final = np.unpackbits(np.frombuffer(bytes.fromhex(e["sprite"]), dtype=np.uint8))
+    assert np.array_equal(final, sprite.logits_to_sprites(np.array(e["logits"])))
     assert e["minMargin"] == pytest.approx(float(np.abs(e["logits"]).min()))
 
 
@@ -47,7 +52,13 @@ def test_evaluate_checkpoint_end_to_end(tmp_path):
     np.save(data_dir / "train.npy", x[:128])
     np.save(data_dir / "val.npy", x[128:])
     dens = x[:128].mean(1)
-    (data_dir / "stats.json").write_text(json.dumps({"density_p5": float(np.percentile(dens, 5)), "density_p95": float(np.percentile(dens, 95))}))
+    (data_dir / "stats.json").write_text(json.dumps({
+        "density_p1": float(np.percentile(dens, 1)),
+        "density_p5": float(np.percentile(dens, 5)),
+        "density_p95": float(np.percentile(dens, 95)),
+        "density_p99": float(np.percentile(dens, 99)),
+        "components_fraction_val": metrics.components_fraction(x[128:], 2),
+    }))
     config = train.default_config(run="t", epochs=5, batch=32, lr=5e-3, latent=8, enc_hidden=32, dec_hidden=(32,), seed=1)
     run_dir = tmp_path / "run"
     train.train(config, x[:128], x[128:], run_dir)

@@ -13,6 +13,7 @@ import torch
 import metrics
 import model
 import quantize
+import sprite
 from data import DATA_DIR, load_dataset, render_contact
 from seed import latents_for_seeds
 
@@ -39,7 +40,7 @@ def evaluate_checkpoint(ckpt: Path, data_dir: Path = DATA_DIR, n_seeds: int = 10
     with torch.no_grad():
         mu, _ = vae.encoder(torch.from_numpy(val.astype(np.float32)))
     recon_logits = quantize.forward_numpy(qspec, mu.numpy())
-    recon_acc = float(((recon_logits > 0).astype(np.uint8) == val).mean())
+    recon_acc = float((sprite.logits_to_sprites(recon_logits) == val).mean())
     if recon_floor is None:
         floor, source = current_floor(recon_acc)
     else:
@@ -47,7 +48,7 @@ def evaluate_checkpoint(ckpt: Path, data_dir: Path = DATA_DIR, n_seeds: int = 10
 
     # A sequential generator of width `latent` yields exactly this prefix of the 32-dim seed stream.
     z = latents_for_seeds(range(n_seeds))[:, : qspec["latent"]]
-    samples = (quantize.forward_numpy(qspec, z) > 0).astype(np.uint8)
+    samples = sprite.logits_to_sprites(quantize.forward_numpy(qspec, z))
     result = metrics.gate_checks(samples, train, stats, recon_acc, floor)
     if objective == "gan":
         result["checks"]["reconstruction"] = {"value": None, "threshold": None, "op": "n/a", "passed": True, "note": "GAN objective: encoder untrained, reconstruction not applicable"}

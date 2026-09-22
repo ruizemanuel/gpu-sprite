@@ -18,6 +18,7 @@ import numpy as np
 import evaluate
 import model
 import quantize
+import sprite
 from data import DATA_DIR, load_dataset
 from seed import SEED_VERSION, latents_for_seeds
 
@@ -72,7 +73,9 @@ def build_parity(qspec: dict, seeds) -> dict:
             "seed": int(seed),
             "z": [float(v) for v in z],
             "logits": [float(v) for v in logits],
+            # Raw threshold, and the final sprite after isolated-pixel cleanup.
             "bits": np.packbits(bits).tobytes().hex(),
+            "sprite": np.packbits(sprite.logits_to_sprites(logits)).tobytes().hex(),
             "minMargin": float(np.abs(logits).min()),
         })
     return {"seedVersion": SEED_VERSION, "latent": latent, "pixels": 256, "entries": entries}

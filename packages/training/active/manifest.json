@@ -1,0 +1,9 @@
+{
+  "checkpoint": "baseline@2650bc19f36a",
+  "checkpoint_sha256": "2650bc19f36ab801bfcde6dd07e0a053ead967cec4aa77b029da71b13a4a9bed",
+  "train_sha256": "5c0feec9e1804d1d5d18c91240dbae53527b6f28994e0bb512e217307e5bfcc8",
+  "val_sha256": "8ac31400e34022016ac3362fbc304cbd4751dfe2bf1b8506f81043f040ad345d",
+  "weights_ts_sha256": "68e7af429e72de496e1f8d9749074cccc26fe74e12f2c8ed05cdb14503f9dabb",
+  "parity_seeds": 64,
+  "exported_at": "2026-09-22T19:31:50.471293+00:00"
+}

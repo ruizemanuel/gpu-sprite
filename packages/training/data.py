@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
+import metrics
+
 HERE = Path(__file__).resolve().parent
 DATA_DIR = HERE / "data"
 MANIFEST_PATH = DATA_DIR / "manifest.json"
@@ -170,6 +172,10 @@ def build(zip_path: Path, manifest: dict, out_dir: Path) -> dict:
         "density_mean": float(density.mean()),
         "density_p5": float(np.percentile(density, 5)),
         "density_p95": float(np.percentile(density, 95)),
+        # Quality-gate thresholds are calibrated on the dataset itself (see metrics.gate_checks).
+        "density_p1": float(np.percentile(density, 1)),
+        "density_p99": float(np.percentile(density, 99)),
+        "components_fraction_val": metrics.components_fraction(val_flat, 2) if len(val_flat) else None,
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     np.save(out_dir / "train.npy", train_flat)

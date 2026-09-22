@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import metrics
 
@@ -39,11 +40,16 @@ def test_components_fraction():
     assert metrics.components_fraction(samples, 2) == 0.5
 
 
-def test_gate_checks_pass_and_fail():
+def noise_samples():
     rng = np.random.default_rng(1)
     train = (rng.random((50, 256)) > 0.6).astype(np.uint8)
     samples = (rng.random((100, 256)) > 0.6).astype(np.uint8)
-    stats = {"density_p5": 0.0, "density_p95": 1.0}
+    return samples, train
+
+
+def test_gate_checks_pass_and_fail():
+    samples, train = noise_samples()
+    stats = {"density_p1": 0.0, "density_p99": 1.0, "components_fraction_val": 0.8}
     result = metrics.gate_checks(samples, train, stats, recon_acc=0.95, recon_floor=0.9)
     assert set(result["checks"]) == {"uniqueness", "hamming_median", "components_fraction", "density", "reconstruction"}
     assert result["checks"]["uniqueness"]["passed"] is True
@@ -52,3 +58,29 @@ def test_gate_checks_pass_and_fail():
     assert result["passed"] is False
     tight = metrics.gate_checks(samples, train, stats, recon_acc=0.5, recon_floor=0.9)
     assert tight["checks"]["reconstruction"]["passed"] is False
+
+
+def test_fixed_thresholds_are_only_uniqueness_and_hamming():
+    assert metrics.THRESHOLDS == {"uniqueness": 0.95, "hamming_median": 8}
+
+
+def test_gate_thresholds_come_from_stats():
+    samples, train = noise_samples()
+    # density_p5/p95 would fail this noise; the gate must use p1/p99 instead.
+    stats = {"density_p1": 0.0, "density_p99": 1.0, "density_p5": 0.5, "density_p95": 0.5, "components_fraction_val": 0.0}
+    result = metrics.gate_checks(samples, train, stats, recon_acc=0.95, recon_floor=0.9)
+    comp = result["checks"]["components_fraction"]
+    assert comp["threshold"] == 0.0 and comp["passed"] is True
+    dens = result["checks"]["density"]
+    assert dens["threshold"] == [0.0, 1.0] and dens["passed"] is True
+    assert result["passed"] is True
+
+
+@pytest.mark.parametrize("stats", [
+    {"density_p1": 0.0, "density_p99": 1.0},
+    {"density_p1": 0.0, "density_p99": 1.0, "components_fraction_val": None},
+])
+def test_gate_requires_components_fraction_val(stats):
+    samples, train = noise_samples()
+    with pytest.raises(ValueError, match="components_fraction_val"):
+        metrics.gate_checks(samples, train, stats, recon_acc=0.95, recon_floor=0.9)

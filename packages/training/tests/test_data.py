@@ -99,4 +99,7 @@ def test_end_to_end_build(tmp_path):
     val = np.load(tmp_path / "val.npy")
     assert train.dtype == np.uint8 and train.shape[1] == 256
     assert stats["train"] == len(train) and stats["val"] == len(val)
+    assert {"density_p1", "density_p99", "components_fraction_val"} <= set(stats)
+    assert stats["density_p1"] <= stats["density_p5"] <= stats["density_p95"] <= stats["density_p99"]
+    assert stats["components_fraction_val"] is None or 0.0 <= stats["components_fraction_val"] <= 1.0
     assert (tmp_path / "contact.png").exists()

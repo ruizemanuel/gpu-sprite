@@ -6,7 +6,9 @@ from collections import deque
 
 import numpy as np
 
-THRESHOLDS = {"uniqueness": 0.95, "hamming_median": 8, "components_fraction": 0.80}
+# Fixed thresholds. The coherence (components) and density thresholds are calibrated on the
+# dataset and read from data/stats.json: see gate_checks.
+THRESHOLDS = {"uniqueness": 0.95, "hamming_median": 8}
 SIDE = 16
 
 
@@ -53,14 +55,29 @@ def density(samples: np.ndarray) -> np.ndarray:
     return samples.reshape(len(samples), -1).astype(np.float32).mean(1)
 
 
+def dataset_threshold(train_stats: dict, key: str) -> float:
+    value = train_stats.get(key)
+    if value is None:
+        raise ValueError(f"dataset stats have no '{key}'; rebuild them with `pnpm data`")
+    return float(value)
+
+
 def gate_checks(samples: np.ndarray, train: np.ndarray, train_stats: dict, recon_acc: float, recon_floor: float) -> dict:
+    """Quality gate on final decoded sprites.
+
+    Coherence passes when the share of samples with <= 2 components reaches the validation set's
+    own share (`components_fraction_val`); density passes when the samples' p5/p95 lie within the
+    training density p1/p99.
+    """
+    components_threshold = dataset_threshold(train_stats, "components_fraction_val")
+    density_range = [dataset_threshold(train_stats, "density_p1"), dataset_threshold(train_stats, "density_p99")]
     dens = density(samples)
     p5, p95 = float(np.percentile(dens, 5)), float(np.percentile(dens, 95))
     checks = {
         "uniqueness": {"value": uniqueness(samples), "threshold": THRESHOLDS["uniqueness"], "op": ">="},
         "hamming_median": {"value": float(np.median(nearest_hamming(samples, train))), "threshold": THRESHOLDS["hamming_median"], "op": ">="},
-        "components_fraction": {"value": components_fraction(samples, 2), "threshold": THRESHOLDS["components_fraction"], "op": ">="},
-        "density": {"value": [p5, p95], "threshold": [float(train_stats["density_p5"]), float(train_stats["density_p95"])], "op": "within"},
+        "components_fraction": {"value": components_fraction(samples, 2), "threshold": components_threshold, "op": ">="},
+        "density": {"value": [p5, p95], "threshold": density_range, "op": "within"},
         "reconstruction": {"value": float(recon_acc), "threshold": float(recon_floor), "op": ">="},
     }
     for c in checks.values():
