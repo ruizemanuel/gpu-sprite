@@ -23,7 +23,7 @@ The browser package embeds the decoder as int8 weights and evaluates it either i
 
 ## Model
 
-The shipped checkpoint is `baseline@2650bc19f36a` with 37,248 decoder parameters. The minified bundle is 61,836 bytes, 39,168 bytes Brotli-compressed, against a budget of 40,000. On 1,000 fixed seeds, 100.00% of sprites are unique, the median Hamming distance to the nearest training sprite is 43 pixels, and 41.20% have at most two connected components, against 38.46% of the real validation sprites, which is the gate's threshold. See [MODEL_CARD.md](MODEL_CARD.md) for the evaluation contract, the measured CPU/WebGPU crossover and the limitations.
+The shipped checkpoint is `baseline@2650bc19f36a` with 37,248 decoder parameters. The minified bundle is 62,179 bytes, 39,251 bytes Brotli-compressed, against a budget of 40,000. On 1,000 fixed seeds, 100.00% of sprites are unique, the median Hamming distance to the nearest training sprite is 43 pixels, and 41.20% have at most two connected components — about the same as the 38.46% raw share among the 117 real validation sprites that sets the gate's threshold, a gap within sampling noise at that sample size, so the samples read as about as coherent as real sprites. See [MODEL_CARD.md](MODEL_CARD.md) for the evaluation contract, the measured CPU/WebGPU crossover and the limitations.
 
 ## Development
 

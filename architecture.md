@@ -26,7 +26,7 @@
 
 `shader.ts` holds one WGSL compute shader for a dense layer: workgroup size 256, one workgroup per batch item, thread `o` computes output unit `o`, so no layer may be wider than 256. `webgpu.ts` creates one pipeline and, per layer, uploads weights and biases once and allocates a 16-byte uniform (`batch, inDim, outDim, activation`). A call writes the latents into the input buffer, records one compute pass with one dispatch per layer (hidden layers alternate between two activation buffers, the last layer writes a logits buffer), copies the logits into a `MAP_READ` buffer and awaits a single `mapAsync`. Buffers grow to the largest batch seen and are never shrunk. Calls on one instance are chained so buffer reuse is safe. The GPU returns logits; the CPU decodes them, which also lets the parity test compare logits directly.
 
-The plan called for one generated shader per layer; a single dense-layer shader with per-layer uniforms does the same with less code.
+The original design called for one generated shader per layer; a single dense-layer shader with per-layer uniforms does the same with less code.
 
 ## Backend selection
 
