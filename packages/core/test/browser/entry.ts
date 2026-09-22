@@ -90,4 +90,57 @@ export async function runApi(seeds: number[]): Promise<{ backend: string; adapte
   return { backend: g.backend, adapter: g.adapter, identical, count: g.sprites.length };
 }
 
+/** Median `generateMany` wall time per backend for one batch size, in milliseconds. */
+export interface BenchRow {
+  batch: number;
+  cpuMs: number;
+  gpuMs: number;
+}
+
+export interface BenchReport {
+  adapter: string;
+  rows: BenchRow[];
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** One untimed warm-up call, then the median of `reps` timed calls. */
+async function medianMs(call: () => Promise<unknown>, reps: number): Promise<number> {
+  await call();
+  const times: number[] = [];
+  for (let r = 0; r < reps; r++) {
+    const t0 = performance.now();
+    await call();
+    times.push(performance.now() - t0);
+  }
+  return median(times);
+}
+
+/**
+ * Time the public `generateMany` on a CPU generator and on a WebGPU generator for each batch
+ * size. Both include seed → latent and the CPU decode of logits into sprites, as `auto` would.
+ */
+export async function runBench(sizes: number[], reps: number): Promise<BenchReport> {
+  const cpuGen = defineGenerator({ backend: "cpu" });
+  const gpuGen = defineGenerator({ backend: "webgpu" });
+  let adapter = "unknown adapter";
+  const rows: BenchRow[] = [];
+  for (const batch of sizes) {
+    const seeds = Array.from({ length: batch }, (_, i) => i);
+    const cpuMs = await medianMs(() => cpuGen.generateMany(seeds), reps);
+    const gpuMs = await medianMs(async () => {
+      const result = await gpuGen.generateMany(seeds);
+      adapter = result.adapter ?? adapter;
+    }, reps);
+    rows.push({ batch, cpuMs, gpuMs });
+  }
+  gpuGen.dispose();
+  cpuGen.dispose();
+  return { adapter, rows };
+}
+
 export { hasWebGpu };

@@ -1,42 +1,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser, type Page } from "playwright";
 import type { ParityReport } from "./entry.ts";
+import { openWebGpuPage, swiftshader } from "./launch.ts";
 
-const bundlePath = fileURLToPath(new URL("../../dist/gpu-sprite.test.iife.js", import.meta.url));
 const parityPath = fileURLToPath(new URL("../../../training/active/parity.json", import.meta.url));
-const bundle = readFileSync(bundlePath, "utf8");
 const parity = JSON.parse(readFileSync(parityPath, "utf8")) as { entries: { seed: number }[] };
 const seeds = parity.entries.map((e) => e.seed);
-const swiftshader = process.argv.includes("--swiftshader");
-const args = ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist", ...(swiftshader ? ["--use-webgpu-adapter=swiftshader"] : [])];
-// navigator.gpu only exists in secure contexts and Chromium does not treat about:blank as one,
-// so an empty page is served from http://localhost (a secure origin) by request interception.
-const pageUrl = "http://localhost/";
 
-async function launch(headless: boolean): Promise<{ browser: Browser; page: Page } | undefined> {
-  const browser = await chromium.launch({ headless, channel: "chromium", args });
-  const page = await browser.newPage();
-  await page.route(pageUrl, (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>gpu-sprite parity</title>" }));
-  await page.goto(pageUrl);
-  await page.addScriptTag({ content: bundle });
-  const ready = await page.evaluate(async () => {
-    const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-    return Boolean(window.isSecureContext && gpu && (await gpu.requestAdapter()));
-  });
-  if (ready) return { browser, page };
-  await browser.close();
-  return undefined;
-}
-
-const session = (await launch(true)) ?? (await launch(false));
-if (!session) {
-  console.error("No WebGPU adapter in headless or headed Chromium. Re-run with --swiftshader to use the software adapter (reported as such).");
-  process.exit(1);
-}
-const { browser, page } = session;
-page.on("console", (m) => console.log(`[browser] ${m.text()}`));
-page.on("pageerror", (e) => console.error(`[browser error] ${e.message}`));
+const { browser, page } = await openWebGpuPage("gpu-sprite parity");
 
 const report = await page.evaluate((s) => (globalThis as unknown as { GpuSpriteTest: { runParity(seeds: number[]): Promise<ParityReport> } }).GpuSpriteTest.runParity(s), seeds);
 const api = await page.evaluate((s) => (globalThis as unknown as { GpuSpriteTest: { runApi(seeds: number[]): Promise<{ backend: string; adapter?: string; identical: boolean; count: number }> } }).GpuSpriteTest.runApi(s), seeds.slice(0, 16));
