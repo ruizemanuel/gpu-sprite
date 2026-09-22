@@ -39,6 +39,12 @@ test("explicit webgpu without support rejects, never falls back", async () => {
   g.dispose();
 });
 
+test("explicit webgpu without support rejects even for an empty batch", async () => {
+  const g = defineGenerator({ backend: "webgpu" });
+  await assert.rejects(() => g.generateMany([]), /WebGPU/);
+  g.dispose();
+});
+
 test("fromLatent accepts a 32-float latent and rejects other lengths", async () => {
   const g = defineGenerator({ backend: "cpu" });
   const sprite = await g.fromLatent(new Float32Array(LATENT_DIM));

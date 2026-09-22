@@ -1,3 +1,4 @@
+import { LATENT_DIM, SEED_VERSION } from "../seed.ts";
 import type { DecodedLayer, ModelSpec } from "./types.ts";
 
 function base64ToInt8(b64: string): Int8Array {
@@ -12,6 +13,9 @@ function base64ToInt8(b64: string): Int8Array {
 /** Decode the embedded int8 payload into dequantized float32 layers. Done once per generator instance. */
 export function decodeModel(spec: ModelSpec): DecodedLayer[] {
   if (spec.format !== 1) throw new Error(`unsupported model format ${String(spec.format)}`);
+  if (spec.seedVersion !== SEED_VERSION) throw new Error(`model seedVersion ${String(spec.seedVersion)} != ${SEED_VERSION}`);
+  if (spec.latent !== LATENT_DIM) throw new Error(`model latent ${String(spec.latent)} != ${LATENT_DIM}`);
+  if (spec.layers[0]?.in !== spec.latent) throw new Error(`model layers[0].in ${String(spec.layers[0]?.in)} != latent ${String(spec.latent)}`);
   const q = base64ToInt8(spec.weights);
   const expected = spec.layers.reduce((n, l) => n + l.in * l.out, 0);
   if (q.length !== expected) throw new Error(`weights payload has ${q.length} bytes, layers need ${expected}`);

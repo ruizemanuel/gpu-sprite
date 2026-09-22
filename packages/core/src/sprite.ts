@@ -52,7 +52,7 @@ export function logitsToSprite(logits: Float32Array, offset = 0): Sprite {
   return { width: 16, height: 16, pixels: despeckle(raw) };
 }
 
-/** Decode a 64-char hex string (numpy packbits, MSB first) into 256 pixels. Used by tests and the demo. */
+/** Decode a 64-char hex string (numpy packbits, MSB first) into 256 pixels. Used by tests. */
 export function hexBitsToPixels(hex: string): Uint8Array {
   if (hex.length !== SPRITE_PIXELS / 4) throw new RangeError(`expected ${SPRITE_PIXELS / 4} hex chars, got ${hex.length}`);
   const pixels = new Uint8Array(SPRITE_PIXELS);

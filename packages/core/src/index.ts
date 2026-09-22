@@ -54,7 +54,8 @@ export class Generator {
   async generateMany(seeds: number[]): Promise<GenerateResult> {
     this.assertLive();
     validateSeeds(seeds);
-    if (seeds.length === 0) return { sprites: [], backend: "cpu" };
+    if (this.backend === "webgpu" && !hasWebGpu()) throw new Error("WebGPU is not available in this environment");
+    if (seeds.length === 0) return { sprites: [], backend: this.backend === "webgpu" ? "webgpu" : "cpu" };
     const z = new Float32Array(seeds.length * LATENT_DIM);
     seeds.forEach((seed, i) => z.set(seedToLatent(seed), i * LATENT_DIM));
     return this.run(z, seeds.length);
@@ -89,11 +90,9 @@ export class Generator {
   }
 
   private async run(z: Float32Array, batch: number): Promise<GenerateResult> {
-    let useGpu = false;
-    if (this.backend === "webgpu") {
-      if (!hasWebGpu()) throw new Error("WebGPU is not available in this environment");
-      useGpu = true;
-    } else if (this.backend === "auto" && batch >= AUTO_WEBGPU_MIN_BATCH && hasWebGpu()) {
+    // generateMany() already rejected an explicit "webgpu" backend without support.
+    let useGpu = this.backend === "webgpu";
+    if (!useGpu && this.backend === "auto" && batch >= AUTO_WEBGPU_MIN_BATCH && hasWebGpu()) {
       try {
         await this.gpuModel();
         useGpu = true;

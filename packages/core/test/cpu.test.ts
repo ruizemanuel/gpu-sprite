@@ -6,30 +6,51 @@ import { CpuModel } from "../src/model/cpu.ts";
 import { model } from "../src/model/weights.ts";
 import type { ModelSpec } from "../src/model/types.ts";
 import { despeckle, hexBitsToPixels, logitsToSprite, SPRITE_PIXELS } from "../src/sprite.ts";
-import { seedToLatent } from "../src/seed.ts";
+import { LATENT_DIM, seedToLatent } from "../src/seed.ts";
 
 function toBase64(bytes: Int8Array): string {
   return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
 }
 
-/** 2 inputs → 2 hidden (relu) → 3 outputs, weights chosen so the math is easy to check by hand. */
+// First layer has LATENT_DIM inputs (decodeModel requires layers[0].in === spec.latent === LATENT_DIM),
+// but only the first two input columns are non-zero, so the hand-computed math below only ever depends
+// on inputs 0 and 1, exactly like a genuine 2-input toy model would.
+const layer0Weights = new Int8Array(LATENT_DIM * 2); // 2 outputs x LATENT_DIM inputs, row-major
+layer0Weights[0] = 2; // row 0 (output 0), col 0
+layer0Weights[LATENT_DIM + 1] = 2; // row 1 (output 1), col 1
+const layer1Weights = new Int8Array([1, 0, 0, 1, 1, 1]); // rows: [1, 0], [0, 1], [1, 1]
+const tinyWeights = new Int8Array(layer0Weights.length + layer1Weights.length);
+tinyWeights.set(layer0Weights, 0);
+tinyWeights.set(layer1Weights, layer0Weights.length);
+
+/** LATENT_DIM inputs (only the first two matter) → 2 hidden (relu) → 3 outputs, weights chosen so the math is easy to check by hand. */
 const tiny: ModelSpec = {
   format: 1,
   seedVersion: 1,
-  latent: 2,
+  latent: LATENT_DIM,
   checkpoint: "tiny",
   layers: [
-    { in: 2, out: 2, activation: "relu", scale: 0.5, bias: [0, -1] },
+    { in: LATENT_DIM, out: 2, activation: "relu", scale: 0.5, bias: [0, -1] },
     { in: 2, out: 3, activation: "none", scale: 1, bias: [0.25, 0, -0.25] },
   ],
-  // layer 1 rows: [2, 0] and [0, 2] (×0.5 → identity); layer 2 rows: [1, 0], [0, 1], [1, 1]
-  weights: toBase64(new Int8Array([2, 0, 0, 2, 1, 0, 0, 1, 1, 1])),
+  weights: toBase64(tinyWeights),
 };
+
+/** Builds a LATENT_DIM-wide input row with `a` at index 0, `b` at index 1 and zeros elsewhere. */
+function tinyInput(a: number, b: number): number[] {
+  const row = new Array(LATENT_DIM).fill(0);
+  row[0] = a;
+  row[1] = b;
+  return row;
+}
 
 test("decodeModel dequantizes int8 weights with the per-layer scale", () => {
   const layers = decodeModel(tiny);
   assert.equal(layers.length, 2);
-  assert.deepEqual(Array.from(layers[0].weights), [1, 0, 0, 1]);
+  assert.equal(layers[0].weights.length, LATENT_DIM * 2);
+  assert.equal(layers[0].weights[0], 1);
+  assert.equal(layers[0].weights[LATENT_DIM + 1], 1);
+  assert.ok(Array.from(layers[0].weights).every((w, i) => i === 0 || i === LATENT_DIM + 1 || w === 0));
   assert.deepEqual(Array.from(layers[1].weights), [1, 0, 0, 1, 1, 1]);
   assert.deepEqual(Array.from(layers[0].bias), [0, -1]);
   assert.equal(layers[0].relu, true);
@@ -40,11 +61,15 @@ test("decodeModel rejects a payload whose length does not match the layers", () 
   assert.throws(() => decodeModel({ ...tiny, weights: toBase64(new Int8Array([1, 2, 3])) }), /weights payload/);
 });
 
+test("decodeModel rejects a spec with a mismatched latent", () => {
+  assert.throws(() => decodeModel({ ...tiny, latent: 16 }), /latent/);
+});
+
 test("CpuModel.forward computes the MLP with relu and bias for a batch", () => {
   const cpu = new CpuModel(decodeModel(tiny));
-  // sample 0: x=[3, 0.5] → h=[3, max(0.5-1,0)=0] → out=[3.25, 0, 2.75]
-  // sample 1: x=[-1, 4]  → h=[0, 3]              → out=[0.25, 3, 2.75]
-  const out = cpu.forward(new Float32Array([3, 0.5, -1, 4]), 2);
+  // sample 0: x=[3, 0.5, 0...] → h=[3, max(0.5-1,0)=0] → out=[3.25, 0, 2.75]
+  // sample 1: x=[-1, 4, 0...]  → h=[0, 3]              → out=[0.25, 3, 2.75]
+  const out = cpu.forward(new Float32Array([...tinyInput(3, 0.5), ...tinyInput(-1, 4)]), 2);
   assert.deepEqual(Array.from(out), [3.25, 0, 2.75, 0.25, 3, 2.75]);
 });
 
