@@ -1,6 +1,7 @@
 node_modules/
 dist/
 test-results/
+apps/website/public/size.json
 .venv/
 __pycache__/
 .pytest_cache/

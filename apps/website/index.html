@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gpu-sprite</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>gpu-sprite</h1>
+      <p>A tiny learned model that turns a seed into a 16×16 1-bit sprite, locally, on your CPU or GPU. Nothing leaves the page.</p>
+      <div class="controls">
+        <label><input type="radio" name="backend" value="cpu" checked /> CPU</label>
+        <label><input type="radio" name="backend" value="webgpu" id="webgpu-radio" disabled /> WebGPU</label>
+        <span id="webgpu-status" class="webgpu-status">checking WebGPU…</span>
+        <button id="regenerate" type="button">Regenerate</button>
+        <span id="status" aria-live="polite">loading…</span>
+      </div>
+    </header>
+    <main>
+      <div class="grid-wrap">
+        <canvas id="grid" width="1056" height="1056" aria-label="1024 generated sprites"></canvas>
+        <div id="tooltip" hidden></div>
+      </div>
+      <aside id="detail" hidden>
+        <canvas id="detail-canvas" width="192" height="192" aria-label="selected sprite"></canvas>
+        <div class="detail-row">
+          <strong id="detail-seed"></strong>
+          <button id="copy-seed" type="button">Copy seed</button>
+          <button id="close-detail" type="button">Close</button>
+        </div>
+        <p class="hint">Drag the 32 latent sliders to walk the model's latent space (CPU).</p>
+        <div id="sliders"></div>
+      </aside>
+    </main>
+    <footer>
+      <p>
+        Trained on <a href="https://kenney.nl/assets/1-bit-pack">Kenney's 1-Bit Pack</a> (CC0).
+        <a href="https://github.com/ruizemanuel/gpu-sprite">Source</a>.
+        <a href="https://github.com/ruizemanuel/gpu-sprite/blob/main/MODEL_CARD.md">Model card</a>.
+        Package: <span id="size">size not measured</span>.
+      </p>
+    </footer>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
