@@ -26,7 +26,7 @@ All numbers are for the quantized int8 decoder, seeds 0–999 (1,000 sprites), a
 | --- | --- | --- | --- |
 | Unique sprites | 100.00% | ≥ 95.00% (fixed) | PASS |
 | Median Hamming distance to nearest training sprite | 43 pixels | ≥ 8 (fixed) | PASS |
-| Sprites with ≤ 2 connected components (8-connectivity) | 41.20% | ≥ 38.46%, the validation set's own share | PASS |
+| Sprites with ≤ 2 connected components (8-connectivity) | 41.20% | ≥ 38.46%, the raw validation set's own share (no cleanup) | PASS |
 | Sample density p5–p95 | 9.36%–45.72% | within the training p1–p99, 7.42%–73.44% | PASS |
 | Validation reconstruction pixel accuracy | 91.46% | ≥ 90.46% (`first-promotion`: measured − 0.01) | PASS |
 
