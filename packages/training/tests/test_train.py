@@ -64,3 +64,13 @@ def test_training_reduces_loss_and_writes_artifacts(tmp_path):
     assert cfg["latent"] == 8
     assert isinstance(vae, model.VAE)
     assert 0.0 <= extra["val_acc"] <= 1.0
+
+
+def test_gan_training_writes_checkpoint(tmp_path):
+    x = synthetic()
+    config = train.default_config(run="g", objective="gan", epochs=6, batch=32, lr=2e-4, latent=8, enc_hidden=32, dec_hidden=(32,), seed=1)
+    report = train.train(config, x[:96], x[96:], tmp_path)
+    assert (tmp_path / "best.pt").exists()
+    vae, cfg, extra = model.load_checkpoint(tmp_path / "best.pt")
+    assert extra["objective"] == "gan"
+    assert report["best_epoch"] >= 0

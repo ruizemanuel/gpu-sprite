@@ -40,6 +40,7 @@ def default_config(**overrides) -> dict:
 def parse_args(argv: list[str]) -> dict:
     p = argparse.ArgumentParser()
     p.add_argument("--run", required=True)
+    p.add_argument("--objective", choices=["vae", "gan"], default="vae")
     p.add_argument("--epochs", type=int, default=300)
     p.add_argument("--batch", type=int, default=64)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -52,7 +53,7 @@ def parse_args(argv: list[str]) -> dict:
     p.add_argument("--data-dir", default=str(DATA_DIR))
     a = p.parse_args(argv)
     return default_config(
-        run=a.run, epochs=a.epochs, batch=a.batch, lr=a.lr, beta=a.beta, warmup=a.warmup, latent=a.latent,
+        run=a.run, objective=a.objective, epochs=a.epochs, batch=a.batch, lr=a.lr, beta=a.beta, warmup=a.warmup, latent=a.latent,
         enc_hidden=a.enc_hidden, dec_hidden=[int(h) for h in a.dec_hidden.split(",") if h], seed=a.seed,
         data_dir=a.data_dir,
     )
@@ -67,7 +68,72 @@ def validate(vae: model.VAE, val_x: torch.Tensor) -> tuple[float, float]:
     return float(recon), float(acc)
 
 
+def train_gan(config: dict, train_np: np.ndarray, val_np: np.ndarray, run_dir: Path, log=print) -> dict:
+    import metrics
+    from seed import latents_for_seeds
+
+    torch.set_num_threads(1)  # tiny MLPs: thread sync overhead dominates, one thread is much faster on CPU
+    torch.manual_seed(int(config["seed"]))
+    np.random.seed(int(config["seed"]))
+    run_dir.mkdir(parents=True, exist_ok=True)
+    vae = model.build_vae(config)  # encoder stays untrained; decoder is the generator
+    gen = vae.decoder
+    disc = model.Discriminator()
+    opt_g = torch.optim.Adam(gen.parameters(), lr=float(config["lr"]), betas=(0.5, 0.999))
+    opt_d = torch.optim.Adam(disc.parameters(), lr=float(config["lr"]), betas=(0.5, 0.999))
+    bce = torch.nn.functional.binary_cross_entropy_with_logits
+    train_x = torch.from_numpy(train_np.astype(np.float32))
+    epochs, batch, latent = int(config["epochs"]), int(config["batch"]), int(config["latent"])
+    # A sequential generator of width `latent` yields exactly this prefix of the 32-dim seed stream.
+    probe_z = torch.from_numpy(latents_for_seeds(range(200))[:, :latent])
+    best_score, best_epoch, history = -1.0, -1, []
+    start = time.time()
+    for epoch in range(epochs):
+        perm = torch.randperm(len(train_x))
+        sums = np.zeros(2)
+        steps = 0
+        for i in range(0, len(train_x), batch):
+            real = train_x[perm[i : i + batch]]
+            z = torch.randn(len(real), latent)
+            probs = torch.sigmoid(gen(z))
+            fake = (probs > 0.5).float() + probs - probs.detach()  # straight-through hard samples
+            loss_d = bce(disc(real), torch.ones(len(real))) + bce(disc(fake.detach()), torch.zeros(len(real)))
+            opt_d.zero_grad()
+            loss_d.backward()
+            opt_d.step()
+            loss_g = bce(disc(fake), torch.ones(len(real)))
+            opt_g.zero_grad()
+            loss_g.backward()
+            opt_g.step()
+            sums += (loss_d.item(), loss_g.item())
+            steps += 1
+        with torch.no_grad():
+            samples = (gen(probe_z) > 0).numpy().astype(np.uint8)
+        score = metrics.components_fraction(samples, 2) + metrics.uniqueness(samples)
+        row = {"epoch": epoch, "loss_d": sums[0] / steps, "loss_g": sums[1] / steps, "probe_score": score}
+        history.append(row)
+        if score > best_score:
+            best_score, best_epoch = score, epoch
+            model.save_checkpoint(run_dir / "best.pt", vae, config, {"epoch": epoch, "objective": "gan", "probe_score": score, "val_recon": None, "val_acc": None})
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            log(f"epoch {epoch:4d} loss_d {row['loss_d']:.3f} loss_g {row['loss_g']:.3f} probe {score:.3f}")
+    report = {
+        "config": {**config, "dec_hidden": list(config["dec_hidden"])},
+        "train_examples": int(len(train_np)),
+        "val_examples": int(len(val_np)),
+        "seconds": time.time() - start,
+        "best_epoch": best_epoch,
+        "best_probe_score": best_score,
+        "decoder_parameters": int(sum(p.numel() for p in gen.parameters())),
+        "epochs": history,
+    }
+    (run_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    return report
+
+
 def train(config: dict, train_np: np.ndarray, val_np: np.ndarray, run_dir: Path, log=print) -> dict:
+    if config.get("objective") == "gan":
+        return train_gan(config, train_np, val_np, run_dir, log)
     torch.set_num_threads(1)  # tiny MLPs: thread sync overhead dominates, one thread is much faster on CPU
     torch.manual_seed(int(config["seed"]))
     np.random.seed(int(config["seed"]))
@@ -135,8 +201,11 @@ def main(argv: list[str]) -> int:
     train_np, val_np, _ = load_dataset(Path(config.pop("data_dir")))
     run_dir = RUNS_DIR / config["run"]
     report = train(config, train_np, val_np, run_dir)
-    print(f"best epoch {report['best_epoch']} val_recon {report['best_val_recon']:.3f} val_acc {report['best_val_acc']:.4f} "
-          f"decoder params {report['decoder_parameters']} in {report['seconds']:.1f}s -> {run_dir}")
+    if config["objective"] == "gan":
+        best = f"probe_score {report['best_probe_score']:.3f}"
+    else:
+        best = f"val_recon {report['best_val_recon']:.3f} val_acc {report['best_val_acc']:.4f}"
+    print(f"best epoch {report['best_epoch']} {best} decoder params {report['decoder_parameters']} in {report['seconds']:.1f}s -> {run_dir}")
     return 0
 
 

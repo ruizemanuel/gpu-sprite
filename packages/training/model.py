@@ -84,3 +84,12 @@ def load_checkpoint(path: Path) -> tuple[VAE, dict, dict]:
     vae.eval()
     extra = {k: v for k, v in blob.items() if k not in ("config", "state_dict")}
     return vae, blob["config"], extra
+
+
+class Discriminator(nn.Module):
+    def __init__(self, hidden: int = 128):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(PIXELS, hidden), nn.LeakyReLU(0.2), nn.Linear(hidden, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).squeeze(1)
