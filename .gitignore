@@ -1,0 +1,14 @@
+node_modules/
+dist/
+test-results/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+packages/training/runs/
+packages/training/data/cache/
+packages/training/data/*.npy
+packages/training/data/stats.json
+packages/training/data/contact.png
+*.log
+.DS_Store

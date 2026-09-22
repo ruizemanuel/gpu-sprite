@@ -1,0 +1,21 @@
+{
+  "name": "gpu-sprite-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "test:py": "uv run --project packages/training pytest packages/training",
+    "build:core": "pnpm --filter gpu-sprite build",
+    "size": "pnpm --filter gpu-sprite size",
+    "test:browser": "pnpm --filter gpu-sprite test:browser && pnpm --filter @gpu-sprite/website test:browser",
+    "dev": "pnpm --filter @gpu-sprite/website dev",
+    "build:demo": "pnpm --filter @gpu-sprite/website build",
+    "data": "uv run --project packages/training python packages/training/data.py",
+    "train": "uv run --project packages/training python packages/training/train.py",
+    "evaluate": "uv run --project packages/training python packages/training/evaluate.py",
+    "export": "uv run --project packages/training python packages/training/export.py",
+    "check": "pnpm test && pnpm test:py && pnpm build:core && pnpm size && pnpm test:browser"
+  }
+}
