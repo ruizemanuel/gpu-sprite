@@ -1,0 +1,25 @@
+[project]
+name = "gpu-sprite-training"
+version = "0.0.1"
+description = "Training, evaluation and export pipeline for gpu-sprite"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "torch>=2.4",
+  "numpy>=2.0",
+  "pillow>=10.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
