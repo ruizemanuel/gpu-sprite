@@ -1,6 +1,6 @@
 # gpu-sprite
 
-`gpu-sprite` is an experimental, learned 16×16 1-bit sprite generator that runs inside a web page. One small model turns any integer seed into a sprite, on the CPU or on WebGPU, with no server, no model download and no runtime dependencies.
+`gpu-sprite` is an experimental, learned 16×16 1-bit sprite generator that runs inside a web page. One small model turns any integer seed into a character or creature sprite, on the CPU or on WebGPU, with no server, no model download and no runtime dependencies.
 
 ```js
 import { generate } from "gpu-sprite";
@@ -17,13 +17,13 @@ It exists to be embedded in games: a roguelike can generate a new bestiary per r
 
 ## How it works
 
-A seed drives a 32-bit xorshift generator; for each of the 32 latent dimensions, twelve uniforms are summed and 6 is subtracted, which approximates a standard normal. A two-layer MLP decoder (32 → 128 → 256) maps that latent to 256 logits, one per pixel. A pixel is foreground when its logit is positive; then every foreground pixel with no foreground neighbour among its 8 neighbours is cleared, in one pass. The decoder was trained as the decoder of a variational autoencoder on Kenney's CC0 1-Bit Pack; the encoder is not shipped.
+A seed drives a 32-bit xorshift generator; for each of the 32 latent dimensions, twelve uniforms are summed and 6 is subtracted, which approximates a standard normal. A two-layer MLP decoder (32 → 128 → 256) maps that latent to 256 logits, one per pixel. A pixel is foreground when its logit is positive; then every foreground pixel with no foreground neighbour among its 8 neighbours is cleared, in one pass. The decoder was trained as the decoder of a variational autoencoder on the characters and creatures of Kenney's CC0 1-Bit Pack; the encoder is not shipped.
 
 The browser package embeds the decoder as int8 weights and evaluates it either in plain TypeScript or in a WGSL compute shader with one workgroup per sprite and one thread per output unit. The GPU returns logits; thresholding and the isolated-pixel cleanup stay on the CPU, so both backends can be compared bit for bit. `backend: "auto"` (the default) uses WebGPU for batches of 64 or more sprites when a device is available, and the CPU otherwise. Explicit `"webgpu"` never falls back.
 
 ## Model
 
-The shipped checkpoint is `baseline@2650bc19f36a` with 37,248 decoder parameters. The minified bundle is 62,179 bytes, 39,251 bytes Brotli-compressed, against a budget of 40,000. On 1,000 fixed seeds, 100.00% of sprites are unique, the median Hamming distance to the nearest training sprite is 43 pixels, and 41.20% have at most two connected components — about the same as the 38.46% raw share among the 117 real validation sprites that sets the gate's threshold, a gap within sampling noise at that sample size, so the samples read as about as coherent as real sprites. See [MODEL_CARD.md](MODEL_CARD.md) for the evaluation contract, the measured CPU/WebGPU crossover and the limitations.
+The shipped checkpoint is `characters@d6b814721862` with 37,248 decoder parameters, trained with β = 4 only on the characters-and-creatures family of the pack: 106 unique tiles. The minified bundle is 62,227 bytes, 39,846 bytes Brotli-compressed, against a budget of 40,000. On 1,000 fixed seeds, 99.30% of sprites are unique, the median Hamming distance to the nearest training sprite is 28 pixels, and 64.70% have at most two connected components, against the 32.92% raw share among all the real sprites of the dataset that sets the gate's threshold: the samples are not more fragmented than the real sprites, which is what that check guards against. See [MODEL_CARD.md](MODEL_CARD.md) for the evaluation contract, the model history, the measured CPU/WebGPU crossover and the limitations.
 
 ## Development
 
@@ -46,13 +46,13 @@ pnpm --filter gpu-sprite bench:browser   # CPU vs WebGPU timings (after build:co
 To reproduce the model:
 
 ```sh
-pnpm data                                                              # downloads Kenney 1-Bit Pack (CC0), builds train/val
-uv run --project packages/training python packages/training/train.py --run baseline
-uv run --project packages/training python packages/training/evaluate.py --checkpoint packages/training/runs/baseline/best.pt
-uv run --project packages/training python packages/training/export.py --checkpoint packages/training/runs/baseline/best.pt
+pnpm data                                                              # downloads Kenney 1-Bit Pack (CC0), builds train/val from the characters and creatures
+uv run --project packages/training python packages/training/train.py --run characters --beta 4 --epochs 600
+uv run --project packages/training python packages/training/evaluate.py --checkpoint packages/training/runs/characters/best.pt
+uv run --project packages/training python packages/training/export.py --checkpoint packages/training/runs/characters/best.pt
 ```
 
-`export.py` runs the quality gate on the quantized decoder and refuses to write `weights.ts` if it fails. `packages/training/active/` holds the promoted report and the parity fixtures the tests check against.
+`pnpm data` keeps only the tiles inside the `include` index ranges of `packages/training/data/manifest.json`, which select the characters-and-creatures family. `export.py` runs the quality gate on the quantized decoder and refuses to write `weights.ts` if it fails. `packages/training/active/` holds the promoted report and the parity fixtures the tests check against.
 
 ## Repository
 
