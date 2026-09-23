@@ -91,6 +91,14 @@ test("decodeModel rejects a character outside the weight alphabet", () => {
   }
 });
 
+test("decodeModel rejects a character outside the weight alphabet at a non-zero index", () => {
+  assert.equal(tiny.weights.length, 70);
+  for (const bad of ["/", "=", " "]) {
+    const weights = tiny.weights.slice(0, 5) + bad + tiny.weights.slice(6);
+    assert.throws(() => decodeModel({ ...tiny, weights }), /invalid weight character at 5/);
+  }
+});
+
 test("decodeModel rejects a format 1 (int8) model", () => {
   assert.throws(() => decodeModel({ ...tiny, format: 1 } as unknown as ModelSpec), /unsupported model format 1/);
 });

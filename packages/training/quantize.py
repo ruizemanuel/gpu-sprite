@@ -77,6 +77,8 @@ def forward_sequential(qspec: dict, z: np.ndarray) -> np.ndarray:
 def pack_weights(qspec: dict) -> str:
     """Every layer's q, concatenated in layer order, each row-major (out, in), one WEIGHT_ALPHABET character per weight."""
     q = np.concatenate([layer["q"].reshape(-1) for layer in qspec["layers"]]).astype(np.int64)
+    if q.size and (q.min() < -QMAX or q.max() > QMAX):
+        raise ValueError(f"quantized weight out of range [{-QMAX}, {QMAX}]: {q.min()}..{q.max()}")
     return "".join(WEIGHT_ALPHABET[v] for v in q + QMAX)
 
 

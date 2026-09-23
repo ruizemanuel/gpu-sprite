@@ -1,6 +1,5 @@
-import pytest
-
 import numpy as np
+import pytest
 import torch
 
 import model
@@ -75,6 +74,13 @@ def test_weight_alphabet_ends_encode_the_range_ends():
     assert quantize.pack_weights(qspec) == "Af+eg"
 
 
+def test_pack_weights_rejects_out_of_range_values():
+    for bad in (-32, 32):
+        qspec = {"layers": [{"q": np.array([[bad]], np.int8)}]}
+        with pytest.raises(ValueError):
+            quantize.pack_weights(qspec)
+
+
 def test_forward_numpy_matches_torch_on_dequantized_weights():
     specs = random_specs()
     qspec = quantize.quantize_decoder(specs)
@@ -97,8 +103,6 @@ def test_forward_sequential_matches_vectorized():
     b = quantize.forward_numpy(qspec, z)[0]
     assert a.dtype == np.float32
     assert np.abs(a - b).max() < 1e-4
-
-
 
 
 def test_f32_repr_round_trips():
