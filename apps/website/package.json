@@ -6,9 +6,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:browser": "node test/smoke.ts"
+    "test:browser": "node test/smoke.ts",
+    "test": "tsc -p tsconfig.json && node --test \"test/**/*.test.ts\""
   },
   "devDependencies": {
+    "@types/node": "^24.13.6",
+    "@webgpu/types": "^0.1.74",
     "gpu-sprite": "workspace:*",
     "playwright": "^1.63.0",
     "typescript": "^5.9.3",
