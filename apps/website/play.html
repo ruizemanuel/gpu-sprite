@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="./src/style.css" />
     <link rel="stylesheet" href="./src/play.css" />
   </head>
-  <body>
+  <body class="play">
     <header>
       <h1>gpu-sprite · a run</h1>
       <p>
@@ -31,13 +31,13 @@
       </div>
       <aside class="side">
         <div id="player"></div>
+        <p id="hud"></p>
+        <ul id="log"></ul>
         <h2>Bestiary</h2>
         <ol id="bestiary"></ol>
       </aside>
     </main>
     <footer>
-      <p id="hud"></p>
-      <ul id="log"></ul>
       <p>
         Seed <strong id="seed">…</strong>
         <button id="copy-link" type="button">Copy link</button>
