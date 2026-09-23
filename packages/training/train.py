@@ -1,4 +1,4 @@
-"""Train the sprite VAE on CPU. Usage: python train.py --run baseline [--epochs 300]"""
+"""Train the sprite VAE on CPU. Usage: python train.py --run <name> [--beta 4] [--epochs 600]"""
 
 from __future__ import annotations
 

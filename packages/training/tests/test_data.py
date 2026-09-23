@@ -1,11 +1,14 @@
+import hashlib
 import io
 import zipfile
 
 import numpy as np
+import pytest
 from PIL import Image
 
 import data
 import metrics
+import sprite
 
 
 def make_sheet(tiles, columns):
@@ -132,6 +135,44 @@ def test_end_to_end_build(tmp_path):
     assert stats["not_included"] == 0
     assert stats["total_tiles"] == stats["kept_after_filter"] + stats["excluded"] + stats["not_included"]
     assert (tmp_path / "contact.png").exists()
+
+
+def two_by_two(t, r, c):
+    t[r:r + 2, c:c + 2] = True
+
+
+def test_components_fraction_real_is_raw_and_over_train_and_val(tmp_path):
+    # 20 tiles with one blob (1 component) and 10 with two blobs and an isolated pixel (3 components
+    # raw, 2 after cleanup). Every tile is asymmetric, so it is written twice (itself and its flip)
+    # whichever split it lands in: the raw share over train + val is 20/30 by construction.
+    positions = [(r, c) for r in (0, 3, 6, 9, 12) for c in (0, 2, 4, 6)]
+    tiles = []
+    for r, c in positions:
+        t = np.zeros((16, 16), bool)
+        two_by_two(t, r, c)
+        tiles.append(t)
+    for r, c in positions[:10]:
+        t = np.zeros((16, 16), bool)
+        two_by_two(t, r, c)
+        two_by_two(t, r, c + 8)
+        t[15, 15] = True
+        tiles.append(t)
+    manifest = {"member": "Tilesheet/monochrome_packed.png", "tile": 16, "columns": 6, "rows": 5, "exclude": []}
+    stats = data.build(sheet_zip(tmp_path, tiles, 6), manifest, tmp_path)
+    val = np.load(tmp_path / "val.npy")
+    real = np.concatenate([np.load(tmp_path / "train.npy"), val])
+    assert stats["unique"] == 30 and len(real) == 60
+    assert stats["components_fraction_real"] == pytest.approx(20 / 30)
+    # The fixture tells the candidates apart: validation only, or cleaned pixels, give other values.
+    assert len(val) > 0 and metrics.components_fraction(val, 2) != pytest.approx(20 / 30)
+    assert metrics.components_fraction(sprite.despeckle(real), 2) == 1.0
+
+
+def test_dataset_sha256_hashes_the_raw_array_bytes():
+    train = (np.arange(512).reshape(2, 256) % 2).astype(np.uint8)
+    val = np.ones((1, 256), dtype=np.uint8)
+    expected = (hashlib.sha256(train.tobytes()).hexdigest(), hashlib.sha256(val.tobytes()).hexdigest())
+    assert data.dataset_sha256(train, val) == expected
 
 
 def test_end_to_end_build_with_include(tmp_path):

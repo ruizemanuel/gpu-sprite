@@ -201,6 +201,11 @@ def build(zip_path: Path, manifest: dict, out_dir: Path) -> dict:
     return stats
 
 
+def dataset_sha256(train: np.ndarray, val: np.ndarray) -> tuple[str, str]:
+    """sha256 of the raw bytes of the training and validation arrays: the dataset's identity."""
+    return hashlib.sha256(train.tobytes()).hexdigest(), hashlib.sha256(val.tobytes()).hexdigest()
+
+
 def load_dataset(data_dir: Path = DATA_DIR) -> tuple[np.ndarray, np.ndarray, dict]:
     train = np.load(data_dir / "train.npy")
     val = np.load(data_dir / "val.npy")

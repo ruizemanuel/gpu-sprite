@@ -1,7 +1,7 @@
 """Quantize a checkpoint's decoder, run the gate, and write the shipped weights + parity fixtures.
 
-Usage: python export.py --checkpoint runs/baseline/best.pt
-       python export.py --checkpoint runs/x/best.pt --skip-gate --out test-results/candidate.ts
+Usage: python export.py --checkpoint runs/<name>/best.pt
+       python export.py --checkpoint runs/<name>/best.pt --skip-gate --out test-results/candidate.ts
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import evaluate
 import model
 import quantize
 import sprite
-from data import DATA_DIR, load_dataset
+from data import DATA_DIR, dataset_sha256, load_dataset
 from seed import SEED_VERSION, latents_for_seeds
 
 HERE = Path(__file__).resolve().parent
@@ -59,6 +59,15 @@ def render_weights_ts(qspec: dict, checkpoint: str) -> str:
         f'  weights: "{quantize.pack_weights_base64(qspec)}",\n'
         "};\n"
     )
+
+
+def build_floors(previous_report: dict | None, train_sha256: str, val_sha256: str, floor: float) -> dict[str, float]:
+    """`floors_by_dataset` for the new active report: every floor the previous active report knows,
+    carried forward, plus this dataset's. A floor already recorded for this dataset is kept (never
+    lowered); otherwise `floor` is recorded, whether the gate called it first-promotion or new-dataset."""
+    floors = evaluate.recorded_floors(previous_report or {})
+    floors.setdefault(evaluate.dataset_key(train_sha256, val_sha256), float(floor))
+    return floors
 
 
 def build_parity(qspec: dict, seeds) -> dict:
@@ -132,8 +141,10 @@ def main(argv: list[str]) -> int:
         return 0
 
     train_np, val_np, stats = load_dataset(Path(a.data_dir))
-    train_sha256 = hashlib.sha256(train_np.tobytes()).hexdigest()
-    val_sha256 = hashlib.sha256(val_np.tobytes()).hexdigest()
+    train_sha256, val_sha256 = dataset_sha256(train_np, val_np)
+    previous_path = ACTIVE_DIR / "report.json"
+    previous = json.loads(previous_path.read_text()) if previous_path.exists() else None
+    floors_by_dataset = build_floors(previous, train_sha256, val_sha256, gate["recon_floor"])
     ACTIVE_DIR.mkdir(exist_ok=True)
     (ACTIVE_DIR / "parity.json").write_text(json.dumps(parity) + "\n", newline="\n")
     training_report = json.loads((ckpt.parent / "report.json").read_text()) if (ckpt.parent / "report.json").exists() else {}
@@ -141,7 +152,8 @@ def main(argv: list[str]) -> int:
         "checkpoint": label,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "gate": gate,
-        "floors": {"reconstruction": gate["recon_floor"]},
+        "floors": {"reconstruction": floors_by_dataset[evaluate.dataset_key(train_sha256, val_sha256)]},
+        "floors_by_dataset": floors_by_dataset,
         "data": {**stats, "train_sha256": train_sha256, "val_sha256": val_sha256},
         "training": {k: v for k, v in training_report.items() if k != "epochs"},
         "quantization": {"scheme": "int8 symmetric per-tensor", "layers": [{"in": l["in"], "out": l["out"], "scale": float(l["scale"])} for l in qspec["layers"]]},

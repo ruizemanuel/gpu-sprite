@@ -1,10 +1,10 @@
-import hashlib
 import json
 
 import numpy as np
 import pytest
 import torch
 
+import data
 import evaluate
 import export
 import metrics
@@ -82,17 +82,42 @@ def test_evaluate_checkpoint_uses_the_active_floor_only_for_the_same_dataset(tmp
     active.mkdir()
     monkeypatch.setattr(evaluate, "ACTIVE_DIR", active)
     x, data_dir, run_dir = synthetic_dataset_and_checkpoint(tmp_path)
-    same = {
-        "train_sha256": hashlib.sha256(x[:128].tobytes()).hexdigest(),
-        "val_sha256": hashlib.sha256(x[128:].tobytes()).hexdigest(),
-    }
+    train_sha256, val_sha256 = data.dataset_sha256(x[:128], x[128:])
+    same = {"train_sha256": train_sha256, "val_sha256": val_sha256}
     (active / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.123}, "data": same}))
     result = evaluate.evaluate_checkpoint(run_dir / "best.pt", data_dir, n_seeds=50, out_dir=run_dir)
     assert (result["recon_floor"], result["recon_floor_source"]) == (0.123, "active")
     other = {**same, "train_sha256": "0" * 64}
     (active / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.123}, "data": other}))
     result = evaluate.evaluate_checkpoint(run_dir / "best.pt", data_dir, n_seeds=50, out_dir=run_dir)
-    assert result["recon_floor_source"] == "first-promotion"
+    assert result["recon_floor_source"] == "new-dataset"
+
+
+@pytest.mark.parametrize("source", ["first-promotion", "new-dataset"])
+def test_export_carries_floors_forward_per_dataset(tmp_path, monkeypatch, source):
+    x, data_dir, run_dir = synthetic_dataset_and_checkpoint(tmp_path)
+    active = tmp_path / "active"
+    active.mkdir()
+    out = tmp_path / "src" / "weights.ts"
+    for module in (export, evaluate):
+        monkeypatch.setattr(module, "ACTIVE_DIR", active)
+    monkeypatch.setattr(export, "DATA_DIR", data_dir)
+    monkeypatch.setattr(export, "DEFAULT_OUT", out)
+    # The previous active model was promoted on dataset A and predates the per-dataset map.
+    (active / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.9}, "data": ACTIVE_DATA}))
+
+    def passing_gate(ckpt, data_dir, seeds):
+        return {"passed": True, "checks": {}, "recon_acc": 0.81, "recon_floor": 0.8, "recon_floor_source": source, "decoder_parameters": 1}
+
+    monkeypatch.setattr(evaluate, "evaluate_checkpoint", passing_gate)
+    assert export.main(["--checkpoint", str(run_dir / "best.pt")]) == 0
+    report = json.loads((active / "report.json").read_text())
+    key_b = evaluate.dataset_key(*data.dataset_sha256(x[:128], x[128:]))
+    # Both reset labels record the new dataset's floor the same way, next to A's.
+    assert report["floors"] == {"reconstruction": 0.8}
+    assert report["floors_by_dataset"] == {KEY_A: 0.9, key_b: 0.8}
+    # Back on dataset A, its floor is still known.
+    assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (0.9, "active")
 
 
 def test_skip_gate_refuses_src_path(tmp_path, capsys):
@@ -132,26 +157,56 @@ def test_export_refuses_nonstandard_out(tmp_path, capsys):
 
 
 ACTIVE_DATA = {"train_sha256": "a" * 64, "val_sha256": "b" * 64}
+KEY_A = "a" * 64 + ":" + "b" * 64
+KEY_B = "c" * 64 + ":" + "d" * 64
 
 
-def test_current_floor_same_dataset_uses_active_floor_over_a_higher_measurement(tmp_path, monkeypatch):
+def test_dataset_key_joins_the_two_hashes():
+    assert evaluate.dataset_key("a" * 64, "b" * 64) == KEY_A
+
+
+def test_current_floor_legacy_report_same_dataset_uses_active_floor_over_a_higher_measurement(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
     (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.9}, "data": ACTIVE_DATA}))
     assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (0.9, "active")
 
 
+def test_current_floor_a_b_a_keeps_a_floor_via_the_map(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    # Dataset B is active; A was promoted before it and its floor was carried in the map.
+    (tmp_path / "report.json").write_text(json.dumps({
+        "floors": {"reconstruction": 0.8},
+        "floors_by_dataset": {KEY_A: 0.9, KEY_B: 0.8},
+        "data": {"train_sha256": "c" * 64, "val_sha256": "d" * 64},
+    }))
+    assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (0.9, "active")
+    assert evaluate.current_floor(0.5, "c" * 64, "d" * 64) == (0.8, "active")
+
+
 @pytest.mark.parametrize("train_sha256, val_sha256", [("c" * 64, "b" * 64), ("a" * 64, "c" * 64), ("c" * 64, "d" * 64)])
-def test_current_floor_new_dataset_starts_its_own_floor(tmp_path, monkeypatch, train_sha256, val_sha256):
+def test_current_floor_unknown_dataset_is_labelled_new_dataset(tmp_path, monkeypatch, train_sha256, val_sha256):
     monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
     (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.99}, "data": ACTIVE_DATA}))
     floor, source = evaluate.current_floor(0.95, train_sha256, val_sha256)
     assert floor == pytest.approx(0.94)
-    assert source == "first-promotion"
+    assert source == "new-dataset"
 
 
-def test_current_floor_active_report_without_dataset_hashes_is_first_promotion(tmp_path, monkeypatch):
+def test_current_floor_unknown_dataset_with_a_map_is_labelled_new_dataset(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    (tmp_path / "report.json").write_text(json.dumps({"floors_by_dataset": {KEY_A: 0.9}}))
+    assert evaluate.current_floor(0.95, "c" * 64, "d" * 64) == (pytest.approx(0.94), "new-dataset")
+
+
+def test_current_floor_report_floor_without_dataset_hashes_is_labelled_new_dataset(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
     (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.9}}))
+    assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (pytest.approx(0.94), "new-dataset")
+
+
+def test_current_floor_report_without_floors_is_first_promotion(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    (tmp_path / "report.json").write_text(json.dumps({"data": ACTIVE_DATA}))
     assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (pytest.approx(0.94), "first-promotion")
 
 
@@ -160,3 +215,22 @@ def test_current_floor_without_active_report_is_measured_minus_margin(tmp_path, 
     floor, source = evaluate.current_floor(0.95, "a" * 64, "b" * 64)
     assert floor == pytest.approx(0.94)
     assert source == "first-promotion"
+
+
+def test_build_floors_without_a_previous_report_records_the_current_floor():
+    assert export.build_floors(None, "c" * 64, "d" * 64, 0.8) == {KEY_B: 0.8}
+
+
+def test_build_floors_carries_a_legacy_floor_under_its_own_dataset():
+    previous = {"floors": {"reconstruction": 0.9}, "data": ACTIVE_DATA}
+    assert export.build_floors(previous, "c" * 64, "d" * 64, 0.8) == {KEY_A: 0.9, KEY_B: 0.8}
+
+
+def test_build_floors_carries_the_map_and_never_lowers_a_recorded_floor():
+    previous = {
+        "floors": {"reconstruction": 0.8},
+        "floors_by_dataset": {KEY_A: 0.9, KEY_B: 0.8},
+        "data": {"train_sha256": "c" * 64, "val_sha256": "d" * 64},
+    }
+    # Re-promoting on A keeps A's recorded floor and B's entry.
+    assert export.build_floors(previous, "a" * 64, "b" * 64, 0.5) == {KEY_A: 0.9, KEY_B: 0.8}

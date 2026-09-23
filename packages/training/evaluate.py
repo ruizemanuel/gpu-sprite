@@ -1,9 +1,8 @@
-"""Quality gate for a checkpoint's int8 decoder. Usage: python evaluate.py --checkpoint runs/baseline/best.pt"""
+"""Quality gate for a checkpoint's int8 decoder. Usage: python evaluate.py --checkpoint runs/<name>/best.pt"""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -15,7 +14,7 @@ import metrics
 import model
 import quantize
 import sprite
-from data import DATA_DIR, load_dataset, render_contact
+from data import DATA_DIR, dataset_sha256, load_dataset, render_contact
 from seed import latents_for_seeds
 
 HERE = Path(__file__).resolve().parent
@@ -23,17 +22,39 @@ ACTIVE_DIR = HERE / "active"
 FIRST_PROMOTION_MARGIN = 0.01
 
 
+def dataset_key(train_sha256: str, val_sha256: str) -> str:
+    """Key of a dataset in `floors_by_dataset`."""
+    return f"{train_sha256}:{val_sha256}"
+
+
+def recorded_floors(report: dict) -> dict[str, float]:
+    """Reconstruction floors a report knows, by dataset key: its `floors_by_dataset` map, plus, for
+    reports that predate the map, its single `floors.reconstruction` keyed by its own `data` hashes."""
+    floors: dict[str, float] = {}
+    legacy = report.get("floors", {}).get("reconstruction")
+    data = report.get("data", {})
+    if legacy is not None and data.get("train_sha256") and data.get("val_sha256"):
+        floors[dataset_key(data["train_sha256"], data["val_sha256"])] = float(legacy)
+    floors.update({k: float(v) for k, v in report.get("floors_by_dataset", {}).items()})
+    return floors
+
+
 def current_floor(measured: float, train_sha256: str, val_sha256: str) -> tuple[float, str]:
-    """The active reconstruction floor if the active model was promoted on this same dataset;
-    otherwise a new dataset starts its own floor at the measured accuracy minus the margin."""
-    report = ACTIVE_DIR / "report.json"
-    if report.exists():
-        active = json.loads(report.read_text())
-        floors, data = active.get("floors", {}), active.get("data", {})
-        same_dataset = data.get("train_sha256") == train_sha256 and data.get("val_sha256") == val_sha256
-        if "reconstruction" in floors and same_dataset:
-            return float(floors["reconstruction"]), "active"
-    return float(measured) - FIRST_PROMOTION_MARGIN, "first-promotion"
+    """The floor recorded for this dataset in the active report ("active"). Otherwise the measured
+    accuracy minus the margin: "new-dataset" when the report records floors for other datasets (or
+    an unkeyed one), "first-promotion" when there is no active report or it records no floor."""
+    measured_floor = float(measured) - FIRST_PROMOTION_MARGIN
+    path = ACTIVE_DIR / "report.json"
+    if not path.exists():
+        return measured_floor, "first-promotion"
+    report = json.loads(path.read_text())
+    floors = recorded_floors(report)
+    key = dataset_key(train_sha256, val_sha256)
+    if key in floors:
+        return floors[key], "active"
+    if floors or "reconstruction" in report.get("floors", {}):
+        return measured_floor, "new-dataset"
+    return measured_floor, "first-promotion"
 
 
 def evaluate_checkpoint(ckpt: Path, data_dir: Path = DATA_DIR, n_seeds: int = 1000, recon_floor: float | None = None, out_dir: Path | None = None) -> dict:
@@ -47,10 +68,7 @@ def evaluate_checkpoint(ckpt: Path, data_dir: Path = DATA_DIR, n_seeds: int = 10
     recon_logits = quantize.forward_numpy(qspec, mu.numpy())
     recon_acc = float((sprite.logits_to_sprites(recon_logits) == val).mean())
     if recon_floor is None:
-        # Hashed exactly as export.py records them in active/report.json.
-        train_sha256 = hashlib.sha256(train.tobytes()).hexdigest()
-        val_sha256 = hashlib.sha256(val.tobytes()).hexdigest()
-        floor, source = current_floor(recon_acc, train_sha256, val_sha256)
+        floor, source = current_floor(recon_acc, *dataset_sha256(train, val))
     else:
         floor, source = float(recon_floor), "override"
 
