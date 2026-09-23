@@ -1,9 +1,9 @@
 {
-  "checkpoint": "baseline@2650bc19f36a",
-  "checkpoint_sha256": "2650bc19f36ab801bfcde6dd07e0a053ead967cec4aa77b029da71b13a4a9bed",
-  "train_sha256": "5c0feec9e1804d1d5d18c91240dbae53527b6f28994e0bb512e217307e5bfcc8",
-  "val_sha256": "8ac31400e34022016ac3362fbc304cbd4751dfe2bf1b8506f81043f040ad345d",
-  "weights_ts_sha256": "68e7af429e72de496e1f8d9749074cccc26fe74e12f2c8ed05cdb14503f9dabb",
+  "checkpoint": "characters@d6b814721862",
+  "checkpoint_sha256": "d6b8147218626450995b3345895e36b0bf52ed298b2d9f2b96a1e5d415481eb0",
+  "train_sha256": "a61f626ae1a2ef64aaf4193e0ac3c9dc7401ceb5a11ce19e21b8d1d05d556366",
+  "val_sha256": "efe21f1b26483697e0a8a23e63fab9c488aeb2c6e1f65d52c089f4f3cda3d8f5",
+  "weights_ts_sha256": "e0e904582adcaf690cc702a2a92c54772a4e1ad6dc016959c66c82f9c8349f44",
   "parity_seeds": 64,
-  "exported_at": "2026-09-22T19:31:50.471293+00:00"
+  "exported_at": "2026-09-23T00:23:55.336415+00:00"
 }

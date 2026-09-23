@@ -1,60 +1,60 @@
 {
-  "checkpoint": "baseline@2650bc19f36a",
-  "exported_at": "2026-09-22T19:31:50.471293+00:00",
+  "checkpoint": "characters@d6b814721862",
+  "exported_at": "2026-09-23T00:23:55.336415+00:00",
   "gate": {
     "passed": true,
     "checks": {
       "uniqueness": {
-        "value": 1.0,
+        "value": 0.993,
         "threshold": 0.95,
         "op": ">=",
         "passed": true
       },
       "hamming_median": {
-        "value": 43.0,
+        "value": 28.0,
         "threshold": 8,
         "op": ">=",
         "passed": true
       },
       "components_fraction": {
-        "value": 0.412,
-        "threshold": 0.38461538461538464,
+        "value": 0.647,
+        "threshold": 0.32919254658385094,
         "op": ">=",
         "passed": true
       },
       "density": {
         "value": [
-          0.09355469048023224,
-          0.45722657442092896
+          0.21484375,
+          0.359375
         ],
         "threshold": [
-          0.07421875,
-          0.734375
+          0.2126171875,
+          0.4609375
         ],
         "op": "within",
         "passed": true
       },
       "reconstruction": {
-        "value": 0.914596688034188,
-        "threshold": 0.904596688034188,
+        "value": 0.8795955882352942,
+        "threshold": 0.8695955882352941,
         "op": ">=",
         "passed": true
       }
     },
-    "checkpoint": "packages\\training\\runs\\baseline\\best.pt",
+    "checkpoint": "packages/training/runs/characters/best.pt",
     "objective": "vae",
     "seeds": 1000,
-    "recon_acc": 0.914596688034188,
-    "recon_floor": 0.904596688034188,
+    "recon_acc": 0.8795955882352942,
+    "recon_floor": 0.8695955882352941,
     "recon_floor_source": "first-promotion",
     "decoder_parameters": 37248,
     "config": {
-      "run": "baseline",
+      "run": "characters",
       "objective": "vae",
-      "epochs": 300,
+      "epochs": 600,
       "batch": 64,
       "lr": 0.001,
-      "beta": 1.0,
+      "beta": 4.0,
       "warmup": 0.3,
       "latent": 32,
       "enc_hidden": 128,
@@ -65,33 +65,34 @@
     }
   },
   "floors": {
-    "reconstruction": 0.904596688034188
+    "reconstruction": 0.8695955882352941
   },
   "data": {
     "total_tiles": 1078,
-    "kept_after_filter": 861,
-    "unique": 848,
-    "excluded": 217,
-    "duplicates": 13,
-    "train": 1205,
-    "val": 117,
-    "density_mean": 0.30348807053941906,
-    "density_p5": 0.109375,
-    "density_p95": 0.515625,
-    "density_p1": 0.07421875,
-    "density_p99": 0.734375,
-    "components_fraction_val": 0.38461538461538464,
-    "train_sha256": "5c0feec9e1804d1d5d18c91240dbae53527b6f28994e0bb512e217307e5bfcc8",
-    "val_sha256": "8ac31400e34022016ac3362fbc304cbd4751dfe2bf1b8506f81043f040ad345d"
+    "kept_after_filter": 106,
+    "unique": 106,
+    "excluded": 0,
+    "not_included": 972,
+    "duplicates": 0,
+    "train": 144,
+    "val": 17,
+    "density_mean": 0.3072916666666667,
+    "density_p5": 0.234375,
+    "density_p95": 0.4166015624999998,
+    "density_p1": 0.2126171875,
+    "density_p99": 0.4609375,
+    "components_fraction_real": 0.32919254658385094,
+    "train_sha256": "a61f626ae1a2ef64aaf4193e0ac3c9dc7401ceb5a11ce19e21b8d1d05d556366",
+    "val_sha256": "efe21f1b26483697e0a8a23e63fab9c488aeb2c6e1f65d52c089f4f3cda3d8f5"
   },
   "training": {
     "config": {
-      "run": "baseline",
+      "run": "characters",
       "objective": "vae",
-      "epochs": 300,
+      "epochs": 600,
       "batch": 64,
       "lr": 0.001,
-      "beta": 1.0,
+      "beta": 4.0,
       "warmup": 0.3,
       "latent": 32,
       "enc_hidden": 128,
@@ -100,12 +101,12 @@
       ],
       "seed": 1337
     },
-    "train_examples": 1205,
-    "val_examples": 117,
-    "seconds": 23.31075382232666,
-    "best_epoch": 246,
-    "best_val_recon": 52.12818145751953,
-    "best_val_acc": 0.9155982732772827,
+    "train_examples": 144,
+    "val_examples": 17,
+    "seconds": 6.3210813999176025,
+    "best_epoch": 587,
+    "best_val_recon": 70.48194885253906,
+    "best_val_acc": 0.8800551295280457,
     "decoder_parameters": 37248
   },
   "quantization": {
@@ -114,12 +115,12 @@
       {
         "in": 32,
         "out": 128,
-        "scale": 0.011377585120499134
+        "scale": 0.009025861509144306
       },
       {
         "in": 128,
         "out": 256,
-        "scale": 0.010982365347445011
+        "scale": 0.004756568465381861
       }
     ]
   },
