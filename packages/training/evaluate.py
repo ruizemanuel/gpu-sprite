@@ -1,4 +1,4 @@
-"""Quality gate for a checkpoint's int8 decoder. Usage: python evaluate.py --checkpoint runs/<name>/best.pt"""
+"""Quality gate for a checkpoint's quantized decoder. Usage: python evaluate.py --checkpoint runs/<name>/best.pt"""
 
 from __future__ import annotations
 

@@ -56,7 +56,7 @@ def render_weights_ts(qspec: dict, checkpoint: str) -> str:
         f"  latent: {qspec['latent']},\n"
         f'  checkpoint: "{checkpoint}",\n'
         "  layers: [\n" + ",\n".join(layers) + "\n  ],\n"
-        f'  weights: "{quantize.pack_weights_base64(qspec)}",\n'
+        f'  weights: "{quantize.pack_weights(qspec)}",\n'
         "};\n"
     )
 
@@ -156,7 +156,7 @@ def main(argv: list[str]) -> int:
         "floors_by_dataset": floors_by_dataset,
         "data": {**stats, "train_sha256": train_sha256, "val_sha256": val_sha256},
         "training": {k: v for k, v in training_report.items() if k != "epochs"},
-        "quantization": {"scheme": "int8 symmetric per-tensor", "layers": [{"in": l["in"], "out": l["out"], "scale": float(l["scale"])} for l in qspec["layers"]]},
+        "quantization": {"scheme": "int6 symmetric per-tensor", "bias_decimals": quantize.BIAS_DECIMALS, "layers": [{"in": l["in"], "out": l["out"], "scale": float(l["scale"])} for l in qspec["layers"]]},
         "decoder_parameters": gate["decoder_parameters"],
     }
     (ACTIVE_DIR / "report.json").write_text(json.dumps(report, indent=2) + "\n", newline="\n")

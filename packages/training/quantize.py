@@ -1,22 +1,30 @@
-"""Int8 per-tensor symmetric quantization and numpy reference forward passes."""
+"""Int6 per-tensor symmetric quantization, bias rounding, the weight payload and numpy reference forward passes."""
 
 from __future__ import annotations
-
-import base64
 
 import numpy as np
 
 from seed import LATENT_DIM, SEED_VERSION
 
-FORMAT = 1
+FORMAT = 2
+QMAX = 31  # int6: q in [-31, 31]
+BIAS_DECIMALS = 3
+# One payload character per weight: character i encodes q = i - QMAX (the base64 alphabet without "/").
+# Shared with packages/core/src/model/decode.ts.
+WEIGHT_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
 
 
 def quantize_tensor(w: np.ndarray) -> tuple[np.ndarray, np.float32]:
     w = w.astype(np.float32)
     amax = float(np.abs(w).max()) if w.size else 0.0
-    scale = np.float32(amax / 127.0) if amax > 0 else np.float32(1.0)
-    q = np.clip(np.rint(w / scale), -127, 127).astype(np.int8)
+    scale = np.float32(amax / QMAX) if amax > 0 else np.float32(1.0)
+    q = np.clip(np.rint(w / scale), -QMAX, QMAX).astype(np.int8)
     return q, scale
+
+
+def round_bias(b: np.ndarray) -> np.ndarray:
+    """Biases rounded to BIAS_DECIMALS decimals, as float32, so `f32_repr` prints at most that many."""
+    return np.round(b.astype(np.float64), BIAS_DECIMALS).astype(np.float32)
 
 
 def quantize_decoder(specs: list[dict]) -> dict:
@@ -28,7 +36,7 @@ def quantize_decoder(specs: list[dict]) -> dict:
             "out": int(s["weight"].shape[0]),
             "activation": s["activation"],
             "scale": scale,
-            "bias": s["bias"].astype(np.float32),
+            "bias": round_bias(s["bias"]),
             "q": q,
         })
     return {"format": FORMAT, "seedVersion": SEED_VERSION, "latent": layers[0]["in"] if layers else LATENT_DIM, "layers": layers}
@@ -66,9 +74,10 @@ def forward_sequential(qspec: dict, z: np.ndarray) -> np.ndarray:
     return x
 
 
-def pack_weights_base64(qspec: dict) -> str:
-    raw = np.concatenate([layer["q"].reshape(-1) for layer in qspec["layers"]]).astype(np.int8).tobytes()
-    return base64.b64encode(raw).decode("ascii")
+def pack_weights(qspec: dict) -> str:
+    """Every layer's q, concatenated in layer order, each row-major (out, in), one WEIGHT_ALPHABET character per weight."""
+    q = np.concatenate([layer["q"].reshape(-1) for layer in qspec["layers"]]).astype(np.int64)
+    return "".join(WEIGHT_ALPHABET[v] for v in q + QMAX)
 
 
 def f32_repr(x) -> str:

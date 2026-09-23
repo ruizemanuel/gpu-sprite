@@ -1,4 +1,5 @@
 import json
+import re
 
 import numpy as np
 import pytest
@@ -27,9 +28,15 @@ def test_render_weights_ts_structure():
     assert 'import type { ModelSpec } from "./types.ts";' in src
     assert 'checkpoint: "test@abc123"' in src
     assert src.count('"activation": "relu"') == 1 and src.count('"activation": "none"') == 1
+    assert "format: 2," in src
     assert 'weights: "' in src
     payload = src.split('weights: "')[1].split('"')[0]
-    assert len(payload) == ((32 * 128 + 128 * 256 + 2) // 3) * 4
+    assert payload == quantize.pack_weights(qspec)
+    assert len(payload) == 32 * 128 + 128 * 256
+    biases = re.findall(r'"bias": \[([^\]]*)\]', src)
+    assert len(biases) == 2
+    for text in ", ".join(biases).split(", "):
+        assert len(text.partition(".")[2]) <= 3, text
 
 
 def test_build_parity_entries():
@@ -116,6 +123,9 @@ def test_export_carries_floors_forward_per_dataset(tmp_path, monkeypatch, source
     # Both reset labels record the new dataset's floor the same way, next to A's.
     assert report["floors"] == {"reconstruction": 0.8}
     assert report["floors_by_dataset"] == {KEY_A: 0.9, key_b: 0.8}
+    assert report["quantization"]["scheme"] == "int6 symmetric per-tensor"
+    assert report["quantization"]["bias_decimals"] == 3
+    assert "format: 2," in out.read_text()
     # Back on dataset A, its floor is still known.
     assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (0.9, "active")
 

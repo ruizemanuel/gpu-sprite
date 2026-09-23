@@ -1,4 +1,4 @@
-import base64
+import pytest
 
 import numpy as np
 import torch
@@ -18,7 +18,9 @@ def test_quantize_tensor_bounds_and_error():
     w = rng.normal(size=(64, 32)).astype(np.float32)
     q, scale = quantize.quantize_tensor(w)
     assert q.dtype == np.int8 and scale.dtype == np.float32
-    assert q.min() >= -127 and q.max() <= 127
+    assert quantize.QMAX == 31
+    assert q.min() >= -31 and q.max() <= 31
+    assert np.abs(q).max() == 31  # the largest |w| lands on the end of the range
     assert np.abs(q.astype(np.float32) * scale - w).max() <= scale / 2 + 1e-6
 
 
@@ -30,9 +32,47 @@ def test_quantize_zero_tensor():
 
 def test_quantize_decoder_layout():
     spec = quantize.quantize_decoder(random_specs())
-    assert spec["format"] == 1 and spec["seedVersion"] == 1 and spec["latent"] == 32
+    assert spec["format"] == 2 and spec["seedVersion"] == 1 and spec["latent"] == 32
     assert [(l["in"], l["out"], l["activation"]) for l in spec["layers"]] == [(32, 128, "relu"), (128, 256, "none")]
     assert spec["layers"][0]["q"].shape == (128, 32)
+
+
+def test_quantize_decoder_rounds_biases_to_three_decimals():
+    specs = random_specs()
+    qspec = quantize.quantize_decoder(specs)
+    for layer, s in zip(qspec["layers"], specs):
+        assert layer["bias"].dtype == np.float32
+        assert np.array_equal(layer["bias"], quantize.round_bias(s["bias"]))
+        for b in layer["bias"]:
+            text = quantize.f32_repr(b)
+            assert len(text.partition(".")[2]) <= 3, text
+            assert np.float32(float(text)) == b
+
+
+@pytest.mark.parametrize("x, text", [
+    (0.46607, "0.466"), (-0.57072, "-0.571"), (0.99962, "1"), (-0.00037, "-0"), (0.0, "0"), (-0.6308599, "-0.631"),
+])
+def test_round_bias_edge_values(x, text):
+    b = quantize.round_bias(np.array([x], np.float32))
+    assert b.dtype == np.float32
+    assert quantize.f32_repr(b[0]) == text
+
+
+def test_pack_weights_one_character_per_weight():
+    qspec = quantize.quantize_decoder(random_specs())
+    packed = quantize.pack_weights(qspec)
+    expected = np.concatenate([l["q"].reshape(-1) for l in qspec["layers"]])
+    assert len(packed) == expected.size == 32 * 128 + 128 * 256
+    assert set(packed) <= set(quantize.WEIGHT_ALPHABET)
+    decoded = np.array([quantize.WEIGHT_ALPHABET.index(c) - quantize.QMAX for c in packed])
+    assert np.array_equal(decoded, expected)
+
+
+def test_weight_alphabet_ends_encode_the_range_ends():
+    assert quantize.WEIGHT_ALPHABET == "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
+    assert len(set(quantize.WEIGHT_ALPHABET)) == 2 * quantize.QMAX + 1 == 63
+    qspec = {"layers": [{"q": np.array([[-31, 0, 31]], np.int8)}, {"q": np.array([[-1, 1]], np.int8)}]}
+    assert quantize.pack_weights(qspec) == "Af+eg"
 
 
 def test_forward_numpy_matches_torch_on_dequantized_weights():
@@ -59,12 +99,6 @@ def test_forward_sequential_matches_vectorized():
     assert np.abs(a - b).max() < 1e-4
 
 
-def test_pack_roundtrip():
-    qspec = quantize.quantize_decoder(random_specs())
-    packed = quantize.pack_weights_base64(qspec)
-    raw = np.frombuffer(base64.b64decode(packed), dtype=np.int8)
-    expected = np.concatenate([l["q"].reshape(-1) for l in qspec["layers"]])
-    assert np.array_equal(raw, expected)
 
 
 def test_f32_repr_round_trips():
