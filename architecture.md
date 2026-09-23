@@ -24,13 +24,13 @@
 
 ## WebGPU runtime
 
-`shader.ts` holds one WGSL compute shader for a dense layer: workgroup size 256, one workgroup per batch item, thread `o` computes output unit `o`, so no layer may be wider than 256. `webgpu.ts` creates one pipeline and, per layer, uploads weights and biases once and allocates a 16-byte uniform (`batch, inDim, outDim, activation`). A call writes the latents into the input buffer, records one compute pass with one dispatch per layer (hidden layers alternate between two activation buffers, the last layer writes a logits buffer), copies the logits into a `MAP_READ` buffer and awaits a single `mapAsync`. Buffers grow to the largest batch seen and are never shrunk. Calls on one instance are chained so buffer reuse is safe. The GPU returns logits; the CPU decodes them, which also lets the parity test compare logits directly.
+`shader.ts` holds one WGSL compute shader for a dense layer: workgroup size 256, one workgroup per batch item, thread `o` computes output unit `o`, so no layer may be wider than 256. `webgpu.ts` checks every layer's width before it requests a device, builds the pipeline with `createComputePipelineAsync` (a shader or pipeline error rejects instead of producing an invalid pipeline), destroys the device if setup fails after the device exists, and exposes the device's `lost` promise. It creates one pipeline and, per layer, uploads weights and biases once and allocates a 16-byte uniform (`batch, inDim, outDim, activation`). A call writes the latents into the input buffer, records one compute pass with one dispatch per layer (hidden layers alternate between two activation buffers, the last layer writes a logits buffer), copies the logits into a `MAP_READ` buffer and awaits a single `mapAsync`. Buffers grow to the largest batch seen and are never shrunk. Calls on one instance are chained so buffer reuse is safe. The GPU returns logits; the CPU decodes them, which also lets the parity test compare logits directly.
 
 The original design called for one generated shader per layer; a single dense-layer shader with per-layer uniforms does the same with less code.
 
 ## Backend selection
 
-`auto` (the default) uses WebGPU when the batch has at least `AUTO_WEBGPU_MIN_BATCH` (64) seeds, `navigator.gpu` exists and a device can be created; otherwise the CPU. Explicit `webgpu` rejects if WebGPU is unavailable and never falls back. `fromLatent` always runs on the CPU. The measured CPU/WebGPU crossover is recorded in [MODEL_CARD.md](MODEL_CARD.md).
+`auto` (the default) uses WebGPU when the batch has at least `AUTO_WEBGPU_MIN_BATCH` (64) seeds, `navigator.gpu` exists and a device can be created; otherwise the CPU. Explicit `webgpu` rejects if WebGPU is unavailable and never falls back. A generator forgets a GPU model whose call fails or whose device is lost, and releases its device. With `auto`, the failed batch is re-run on the CPU and a later batch creates a new device; if creating the GPU model fails, that generator stays on the CPU and does not try again. With `webgpu`, the failing call rejects and the next call starts over, device creation included. `fromLatent` always runs on the CPU. The measured CPU/WebGPU crossover is recorded in [MODEL_CARD.md](MODEL_CARD.md).
 
 ## Training and supervision
 
@@ -42,9 +42,9 @@ The original design called for one generated shader per layer; a single dense-la
 
 ## Tests
 
-- Node (`pnpm test`): seed contract, decoding and CPU parity against `active/parity.json`, public API behaviour.
+- Node (`pnpm test`): seed contract, decoding and CPU parity against `active/parity.json`, public API behaviour, and GPU failure handling (creation failures, failed calls, device loss) against a fake `navigator.gpu`.
 - Python (`pnpm test:py`): seed contract, dataset pipeline, training, metrics, quantization, decoding and export.
-- Browser (`pnpm test:browser`): `packages/core/test/browser/parity.ts` loads the test bundle into Chromium through Playwright and compares WebGPU with the CPU on the 64 parity seeds. WebGPU needs a secure context and Chromium does not treat `about:blank` as one, so the page is served from `http://localhost/` by request interception, without a server. Chromium is tried headless, then headed; `--swiftshader` selects the software adapter and the output says so. `apps/website/test/smoke.ts` builds the demo, serves it with `vite preview` and drives it.
+- Browser (`pnpm test:browser`): `packages/core/test/browser/parity.ts` loads the test bundle into Chromium through Playwright and compares WebGPU with the CPU on the 64 parity seeds. It then destroys the device under an `auto` and a `webgpu` generator, a simulated device loss, and requires both to recover with sprites identical to the CPU's. WebGPU needs a secure context and Chromium does not treat `about:blank` as one, so the page is served from `http://localhost/` by request interception, without a server. Chromium is tried headless, then headed; `--swiftshader` selects the software adapter and the output says so. `apps/website/test/smoke.ts` builds the demo, serves it with `vite preview` and drives it.
 - Benchmark (`pnpm --filter gpu-sprite bench:browser`, not part of `pnpm check`): times `generateMany` on both backends for batch sizes 1 to 4,096 in the same Chromium setup (`test/browser/launch.ts`) and prints the crossover.
 
 ## Size
