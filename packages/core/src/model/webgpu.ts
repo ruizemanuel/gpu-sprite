@@ -87,7 +87,6 @@ export class WebGpuModel {
   }
 
   forward(input: Float32Array, batch: number): Promise<Float32Array> {
-    if (this.disposed) return Promise.reject(new Error("WebGPU model is disposed"));
     if (input.length < batch * this.inputDim) {
       return Promise.reject(new RangeError(`input has ${input.length} values, need ${batch * this.inputDim}`));
     }
@@ -134,6 +133,8 @@ export class WebGpuModel {
   }
 
   private async run(input: Float32Array, batch: number): Promise<Float32Array> {
+    // Checked when the call runs, not when it is queued: a queued call may outlive dispose().
+    if (this.disposed) throw new Error("WebGPU model is disposed");
     this.ensureCapacity(batch);
     const d = this.device;
     // writeBuffer accepts any typed array view at runtime; @webgpu/types only lists ArrayBuffer-backed ones.
