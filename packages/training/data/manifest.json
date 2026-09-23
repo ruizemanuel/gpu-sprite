@@ -7,6 +7,19 @@
   "tile": 16,
   "columns": 49,
   "rows": 22,
+  "include": [
+    { "from": 24, "to": 31, "reason": "characters and creatures" },
+    { "from": 73, "to": 80, "reason": "characters and creatures" },
+    { "from": 122, "to": 129, "reason": "characters and creatures" },
+    { "from": 171, "to": 178, "reason": "characters and creatures" },
+    { "from": 220, "to": 227, "reason": "characters and creatures" },
+    { "from": 269, "to": 276, "reason": "characters and creatures" },
+    { "from": 318, "to": 325, "reason": "characters and creatures" },
+    { "from": 361, "to": 374, "reason": "characters and creatures" },
+    { "from": 410, "to": 423, "reason": "characters and creatures" },
+    { "from": 459, "to": 472, "reason": "characters and creatures" },
+    { "from": 514, "to": 521, "reason": "characters and creatures" }
+  ],
   "exclude": [
     { "from": 1, "to": 7, "reason": "noise and dither textures" },
     { "from": 196, "to": 198, "reason": "dither textures" },

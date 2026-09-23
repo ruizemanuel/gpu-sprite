@@ -66,12 +66,23 @@ def slice_tiles(fg: np.ndarray, tile: int = TILE) -> np.ndarray:
     return fg.reshape(rows, tile, cols, tile).transpose(0, 2, 1, 3).reshape(rows * cols, tile, tile)
 
 
-def filter_tiles(tiles: np.ndarray, exclude: list[dict]) -> list[int]:
-    excluded: set[int] = set()
-    for rng in exclude:
-        excluded.update(range(int(rng["from"]), int(rng["to"]) + 1))
+def index_ranges(ranges: list[dict]) -> set[int]:
+    """Tile indices covered by a list of inclusive `{from, to}` ranges."""
+    out: set[int] = set()
+    for rng in ranges:
+        out.update(range(int(rng["from"]), int(rng["to"]) + 1))
+    return out
+
+
+def filter_tiles(tiles: np.ndarray, exclude: list[dict], include: list[dict] | None = None) -> list[int]:
+    """Indices of tiles inside `include` (the whole sheet when it is None or empty), then minus
+    empty and full tiles and the `exclude` ranges."""
+    excluded = index_ranges(exclude)
+    included = index_ranges(include) if include else None
     kept = []
     for i, t in enumerate(tiles):
+        if included is not None and i not in included:
+            continue
         n = int(t.sum())
         if n == 0 or n == t.size or i in excluded:
             continue
@@ -153,19 +164,24 @@ def build(zip_path: Path, manifest: dict, out_dir: Path) -> dict:
     columns = fg.shape[1] // tile
     render_contact(tiles, columns, out_dir / "contact.png")
 
-    kept = filter_tiles(tiles, manifest.get("exclude", []))
+    include = manifest.get("include")
+    kept = filter_tiles(tiles, manifest.get("exclude", []), include)
+    not_included = len(set(range(len(tiles))) - index_ranges(include)) if include else 0
     unique = dedupe(tiles, kept)
     train_idx, val_idx = split(tiles, unique)
     train = augment(tiles[train_idx])
     val = augment(tiles[val_idx])
     train_flat = train.reshape(len(train), tile * tile).astype(np.uint8)
     val_flat = val.reshape(len(val), tile * tile).astype(np.uint8)
+    real_flat = np.concatenate([train_flat, val_flat])
     density = train_flat.mean(axis=1)
     stats = {
         "total_tiles": int(len(tiles)),
         "kept_after_filter": int(len(kept)),
         "unique": int(len(unique)),
-        "excluded": int(len(tiles) - len(kept)),
+        # Empty, full and exclude-range tiles inside `include`, so total = kept + excluded + not_included.
+        "excluded": int(len(tiles) - len(kept) - not_included),
+        "not_included": int(not_included),
         "duplicates": int(len(kept) - len(unique)),
         "train": int(len(train_flat)),
         "val": int(len(val_flat)),
@@ -175,7 +191,8 @@ def build(zip_path: Path, manifest: dict, out_dir: Path) -> dict:
         # Quality-gate thresholds are calibrated on the dataset itself (see metrics.gate_checks).
         "density_p1": float(np.percentile(density, 1)),
         "density_p99": float(np.percentile(density, 99)),
-        "components_fraction_val": metrics.components_fraction(val_flat, 2) if len(val_flat) else None,
+        # Coherence reference: share of all real sprites (train + validation, raw pixels) with <= 2 components.
+        "components_fraction_real": metrics.components_fraction(real_flat, 2) if len(real_flat) else None,
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     np.save(out_dir / "train.npy", train_flat)

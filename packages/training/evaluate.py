@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -22,11 +23,15 @@ ACTIVE_DIR = HERE / "active"
 FIRST_PROMOTION_MARGIN = 0.01
 
 
-def current_floor(measured: float) -> tuple[float, str]:
+def current_floor(measured: float, train_sha256: str, val_sha256: str) -> tuple[float, str]:
+    """The active reconstruction floor if the active model was promoted on this same dataset;
+    otherwise a new dataset starts its own floor at the measured accuracy minus the margin."""
     report = ACTIVE_DIR / "report.json"
     if report.exists():
-        floors = json.loads(report.read_text()).get("floors", {})
-        if "reconstruction" in floors:
+        active = json.loads(report.read_text())
+        floors, data = active.get("floors", {}), active.get("data", {})
+        same_dataset = data.get("train_sha256") == train_sha256 and data.get("val_sha256") == val_sha256
+        if "reconstruction" in floors and same_dataset:
             return float(floors["reconstruction"]), "active"
     return float(measured) - FIRST_PROMOTION_MARGIN, "first-promotion"
 
@@ -42,7 +47,10 @@ def evaluate_checkpoint(ckpt: Path, data_dir: Path = DATA_DIR, n_seeds: int = 10
     recon_logits = quantize.forward_numpy(qspec, mu.numpy())
     recon_acc = float((sprite.logits_to_sprites(recon_logits) == val).mean())
     if recon_floor is None:
-        floor, source = current_floor(recon_acc)
+        # Hashed exactly as export.py records them in active/report.json.
+        train_sha256 = hashlib.sha256(train.tobytes()).hexdigest()
+        val_sha256 = hashlib.sha256(val.tobytes()).hexdigest()
+        floor, source = current_floor(recon_acc, train_sha256, val_sha256)
     else:
         floor, source = float(recon_floor), "override"
 

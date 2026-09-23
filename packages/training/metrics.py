@@ -65,11 +65,11 @@ def dataset_threshold(train_stats: dict, key: str) -> float:
 def gate_checks(samples: np.ndarray, train: np.ndarray, train_stats: dict, recon_acc: float, recon_floor: float) -> dict:
     """Quality gate on final decoded sprites.
 
-    Coherence passes when the share of samples with <= 2 components reaches the validation set's
-    own share (`components_fraction_val`); density passes when the samples' p5/p95 lie within the
-    training density p1/p99.
+    Coherence passes when the share of samples with <= 2 components reaches the share among all
+    real sprites of the dataset, train + validation, on raw pixels (`components_fraction_real`);
+    density passes when the samples' p5/p95 lie within the training density p1/p99.
     """
-    components_threshold = dataset_threshold(train_stats, "components_fraction_val")
+    components_threshold = dataset_threshold(train_stats, "components_fraction_real")
     density_range = [dataset_threshold(train_stats, "density_p1"), dataset_threshold(train_stats, "density_p99")]
     dens = density(samples)
     p5, p95 = float(np.percentile(dens, 5)), float(np.percentile(dens, 95))

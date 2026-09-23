@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import numpy as np
@@ -45,7 +46,8 @@ def test_build_parity_entries():
     assert e["minMargin"] == pytest.approx(float(np.abs(e["logits"]).min()))
 
 
-def test_evaluate_checkpoint_end_to_end(tmp_path):
+def synthetic_dataset_and_checkpoint(tmp_path):
+    """A tiny synthetic data dir and a 5-epoch checkpoint trained on it."""
     x = synthetic(160)
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -57,15 +59,40 @@ def test_evaluate_checkpoint_end_to_end(tmp_path):
         "density_p5": float(np.percentile(dens, 5)),
         "density_p95": float(np.percentile(dens, 95)),
         "density_p99": float(np.percentile(dens, 99)),
-        "components_fraction_val": metrics.components_fraction(x[128:], 2),
+        "components_fraction_real": metrics.components_fraction(x, 2),
     }))
     config = train.default_config(run="t", epochs=5, batch=32, lr=5e-3, latent=8, enc_hidden=32, dec_hidden=(32,), seed=1)
     run_dir = tmp_path / "run"
     train.train(config, x[:128], x[128:], run_dir)
+    return x, data_dir, run_dir
+
+
+def test_evaluate_checkpoint_end_to_end(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path / "no-active")
+    _, data_dir, run_dir = synthetic_dataset_and_checkpoint(tmp_path)
     result = evaluate.evaluate_checkpoint(run_dir / "best.pt", data_dir, n_seeds=50, out_dir=run_dir)
     assert set(result["checks"]) >= {"uniqueness", "hamming_median", "components_fraction", "density", "reconstruction"}
     assert (run_dir / "gate.json").exists() and (run_dir / "samples.png").exists()
-    assert result["recon_floor_source"] in ("first-promotion", "active")
+    assert result["recon_floor_source"] == "first-promotion"
+    assert result["recon_floor"] == pytest.approx(result["recon_acc"] - evaluate.FIRST_PROMOTION_MARGIN)
+
+
+def test_evaluate_checkpoint_uses_the_active_floor_only_for_the_same_dataset(tmp_path, monkeypatch):
+    active = tmp_path / "active"
+    active.mkdir()
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", active)
+    x, data_dir, run_dir = synthetic_dataset_and_checkpoint(tmp_path)
+    same = {
+        "train_sha256": hashlib.sha256(x[:128].tobytes()).hexdigest(),
+        "val_sha256": hashlib.sha256(x[128:].tobytes()).hexdigest(),
+    }
+    (active / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.123}, "data": same}))
+    result = evaluate.evaluate_checkpoint(run_dir / "best.pt", data_dir, n_seeds=50, out_dir=run_dir)
+    assert (result["recon_floor"], result["recon_floor_source"]) == (0.123, "active")
+    other = {**same, "train_sha256": "0" * 64}
+    (active / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.123}, "data": other}))
+    result = evaluate.evaluate_checkpoint(run_dir / "best.pt", data_dir, n_seeds=50, out_dir=run_dir)
+    assert result["recon_floor_source"] == "first-promotion"
 
 
 def test_skip_gate_refuses_src_path(tmp_path, capsys):
@@ -104,14 +131,32 @@ def test_export_refuses_nonstandard_out(tmp_path, capsys):
     assert "--out" in capsys.readouterr().err
 
 
-def test_current_floor_uses_active_report_and_never_moves_with_a_new_measurement(tmp_path, monkeypatch):
+ACTIVE_DATA = {"train_sha256": "a" * 64, "val_sha256": "b" * 64}
+
+
+def test_current_floor_same_dataset_uses_active_floor_over_a_higher_measurement(tmp_path, monkeypatch):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.9}, "data": ACTIVE_DATA}))
+    assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (0.9, "active")
+
+
+@pytest.mark.parametrize("train_sha256, val_sha256", [("c" * 64, "b" * 64), ("a" * 64, "c" * 64), ("c" * 64, "d" * 64)])
+def test_current_floor_new_dataset_starts_its_own_floor(tmp_path, monkeypatch, train_sha256, val_sha256):
+    monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
+    (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.99}, "data": ACTIVE_DATA}))
+    floor, source = evaluate.current_floor(0.95, train_sha256, val_sha256)
+    assert floor == pytest.approx(0.94)
+    assert source == "first-promotion"
+
+
+def test_current_floor_active_report_without_dataset_hashes_is_first_promotion(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
     (tmp_path / "report.json").write_text(json.dumps({"floors": {"reconstruction": 0.9}}))
-    assert evaluate.current_floor(0.95) == (0.9, "active")
+    assert evaluate.current_floor(0.95, "a" * 64, "b" * 64) == (pytest.approx(0.94), "first-promotion")
 
 
 def test_current_floor_without_active_report_is_measured_minus_margin(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluate, "ACTIVE_DIR", tmp_path)
-    floor, source = evaluate.current_floor(0.95)
+    floor, source = evaluate.current_floor(0.95, "a" * 64, "b" * 64)
     assert floor == pytest.approx(0.94)
     assert source == "first-promotion"
