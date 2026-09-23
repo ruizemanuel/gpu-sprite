@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gpu-sprite · a run</title>
+    <link rel="stylesheet" href="./src/style.css" />
+    <link rel="stylesheet" href="./src/play.css" />
+  </head>
+  <body>
+    <header>
+      <h1>gpu-sprite · a run</h1>
+      <p>
+        Every seed brings a new bestiary, generated in this page by the model: a creature's sprite sets its hit points and attack.
+        Arrow keys or WASD to move, bump into a creature to attack, space to wait. Keyboard only.
+        <a href="./index.html">See the grid</a>
+      </p>
+    </header>
+    <main class="game">
+      <div class="board">
+        <canvas id="map" width="1024" height="640" tabindex="0" aria-label="Dungeon map"></canvas>
+        <div id="overlay" hidden>
+          <h2 id="overlay-title"></h2>
+          <p id="overlay-stats"></p>
+          <p>
+            <button id="retry" type="button">Retry this seed (R)</button>
+            <button id="new-run-end" type="button">New run (N)</button>
+          </p>
+        </div>
+        <p id="message" hidden></p>
+      </div>
+      <aside class="side">
+        <div id="player"></div>
+        <h2>Bestiary</h2>
+        <ol id="bestiary"></ol>
+      </aside>
+    </main>
+    <footer>
+      <p id="hud"></p>
+      <ul id="log"></ul>
+      <p>
+        Seed <strong id="seed">…</strong>
+        <button id="copy-link" type="button">Copy link</button>
+        <button id="new-run" type="button">New run</button>
+      </p>
+      <p id="generation">Generating bestiary…</p>
+    </footer>
+    <script type="module" src="./src/play.ts"></script>
+  </body>
+</html>

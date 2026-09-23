@@ -76,6 +76,30 @@ try {
 
   mkdirSync(fileURLToPath(new URL("../../../test-results/", import.meta.url)), { recursive: true });
   await page.screenshot({ path: screenshotPath, fullPage: true });
+
+  // The game page: a fixed run seed builds its bestiary and takes turns.
+  type GameHook = { seed: number | null; creatures: number; turn: number; backend: string; result: string };
+  const game = () => page.evaluate(() => (window as unknown as { __gpuSpriteGame?: GameHook }).__gpuSpriteGame);
+  await page.goto(new URL("play.html?seed=42", url).href);
+  await page.keyboard.press("ArrowRight"); // before the bestiary exists: must be ignored
+  await page.waitForFunction(() => (window as unknown as { __gpuSpriteGame?: GameHook }).__gpuSpriteGame?.creatures === 8, null, { timeout: 30_000 });
+  const generationText = await page.textContent("#generation");
+  if (!/ on (cpu|webgpu)/.test(generationText ?? "")) failures.push(`generation line names no backend: ${generationText}`);
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Space");
+  const afterWaits = await game();
+  if (!afterWaits || (afterWaits.turn < 3 && afterWaits.result === "playing")) failures.push(`waiting 3 times left the turn at ${afterWaits?.turn}`);
+  for (const key of ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "d", "s"]) await page.keyboard.press(key);
+  const bestiaryItems = await page.locator("#bestiary li").count();
+  if (bestiaryItems !== 8) failures.push(`bestiary panel shows ${bestiaryItems} entries, expected 8`);
+  console.log(`game: ${generationText}; turn ${afterWaits?.turn}`);
+  await page.screenshot({ path: fileURLToPath(new URL("../../../test-results/website-game.png", import.meta.url)), fullPage: true });
+
+  // An invalid seed is reported, never replaced by a random run.
+  await page.goto(new URL("play.html?seed=12abc", url).href);
+  await page.waitForSelector("#message:not([hidden])", { timeout: 10_000 });
+  const invalidText = await page.textContent("#message");
+  if (!invalidText?.includes('Invalid seed "12abc"')) failures.push(`invalid seed message: ${invalidText}`);
+  if ((await game())?.creatures !== 0) failures.push("an invalid seed still built a bestiary");
 } finally {
   await browser.close();
   await server.close();

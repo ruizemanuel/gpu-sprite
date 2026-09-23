@@ -13,7 +13,7 @@ const sprites = await generate([1, 2, 3], { backend: "webgpu" });
 
 For repeated calls, `defineGenerator({ backend })` returns a generator that keeps its model (and, for WebGPU, its device and buffers) between calls: `generateMany(seeds)` returns the sprites plus the backend and adapter that ran them, `fromLatent(z)` decodes a 32-float latent directly, and `dispose()` releases everything.
 
-It exists to be embedded in games: a roguelike can generate a new bestiary per run from seeds, at runtime, and ship the generator inside its bundle. It is not a replacement for an artist or for cloud pixel-art tools; it produces small variations in the style of its training set.
+It exists to be embedded in games: a roguelike can generate a new bestiary per run from seeds, at runtime, and ship the generator inside its bundle. The demo has a small one: run `pnpm dev` and open `/play.html`; every seed brings a new bestiary, generated in the page. It is not a replacement for an artist or for cloud pixel-art tools; it produces small variations in the style of its training set.
 
 ## How it works
 
