@@ -8,8 +8,11 @@ import type { ModelSpec } from "../src/model/types.ts";
 import { despeckle, hexBitsToPixels, logitsToSprite, SPRITE_PIXELS } from "../src/sprite.ts";
 import { LATENT_DIM, seedToLatent } from "../src/seed.ts";
 
-function toBase64(bytes: Int8Array): string {
-  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+const WEIGHT_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+";
+
+/** Encodes int6 weights the way `quantize.py:pack_weights` does: character i is q = i - 31. */
+function toPayload(values: ArrayLike<number>): string {
+  return Array.from(values, (v) => WEIGHT_ALPHABET[v + 31]).join("");
 }
 
 // First layer has LATENT_DIM inputs (decodeModel requires layers[0].in === spec.latent === LATENT_DIM),
@@ -25,7 +28,7 @@ tinyWeights.set(layer1Weights, layer0Weights.length);
 
 /** LATENT_DIM inputs (only the first two matter) → 2 hidden (relu) → 3 outputs, weights chosen so the math is easy to check by hand. */
 const tiny: ModelSpec = {
-  format: 1,
+  format: 2,
   seedVersion: 1,
   latent: LATENT_DIM,
   checkpoint: "tiny",
@@ -33,7 +36,7 @@ const tiny: ModelSpec = {
     { in: LATENT_DIM, out: 2, activation: "relu", scale: 0.5, bias: [0, -1] },
     { in: 2, out: 3, activation: "none", scale: 1, bias: [0.25, 0, -0.25] },
   ],
-  weights: toBase64(tinyWeights),
+  weights: toPayload(tinyWeights),
 };
 
 /** Builds a LATENT_DIM-wide input row with `a` at index 0, `b` at index 1 and zeros elsewhere. */
@@ -44,7 +47,7 @@ function tinyInput(a: number, b: number): number[] {
   return row;
 }
 
-test("decodeModel dequantizes int8 weights with the per-layer scale", () => {
+test("decodeModel dequantizes int6 weights with the per-layer scale", () => {
   const layers = decodeModel(tiny);
   assert.equal(layers.length, 2);
   assert.equal(layers[0].weights.length, LATENT_DIM * 2);
@@ -58,11 +61,38 @@ test("decodeModel dequantizes int8 weights with the per-layer scale", () => {
 });
 
 test("decodeModel rejects a payload whose length does not match the layers", () => {
-  assert.throws(() => decodeModel({ ...tiny, weights: toBase64(new Int8Array([1, 2, 3])) }), /weights payload/);
+  assert.throws(() => decodeModel({ ...tiny, weights: toPayload([1, 2, 3]) }), /weights payload/);
 });
 
 test("decodeModel rejects a spec with a mismatched latent", () => {
   assert.throws(() => decodeModel({ ...tiny, latent: 16 }), /latent/);
+});
+
+test("decodeModel maps the ends of the weight alphabet to -31 and 31", () => {
+  const values = new Int8Array(LATENT_DIM);
+  values[0] = -31;
+  values[1] = 31;
+  const spec: ModelSpec = {
+    ...tiny,
+    layers: [{ in: LATENT_DIM, out: 1, activation: "none", scale: 0.5, bias: [0] }],
+    weights: toPayload(values),
+  };
+  assert.equal(spec.weights.slice(0, 3), "A+f");
+  const [layer] = decodeModel(spec);
+  assert.equal(layer.weights[0], -15.5);
+  assert.equal(layer.weights[1], 15.5);
+  assert.ok(layer.weights.subarray(2).every((w) => w === 0));
+});
+
+test("decodeModel rejects a character outside the weight alphabet", () => {
+  for (const bad of ["/", "=", " "]) {
+    const weights = bad + tiny.weights.slice(1);
+    assert.throws(() => decodeModel({ ...tiny, weights }), /invalid weight character at 0/);
+  }
+});
+
+test("decodeModel rejects a format 1 (int8) model", () => {
+  assert.throws(() => decodeModel({ ...tiny, format: 1 } as unknown as ModelSpec), /unsupported model format 1/);
 });
 
 test("CpuModel.forward computes the MLP with relu and bias for a batch", () => {

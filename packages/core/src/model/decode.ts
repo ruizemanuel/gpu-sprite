@@ -1,24 +1,28 @@
 import { LATENT_DIM, SEED_VERSION } from "../seed.ts";
 import type { DecodedLayer, ModelSpec } from "./types.ts";
 
-function base64ToInt8(b64: string): Int8Array {
-  const bin = atob(b64);
-  const out = new Int8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) {
-    out[i] = (bin.charCodeAt(i) << 24) >> 24;
+/** Character `i` encodes the int6 weight `i - 31`: the base64 alphabet without "/". Mirrors `quantize.py`. */
+const WEIGHT_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+";
+
+function decodeInt6(payload: string): Int8Array {
+  const out = new Int8Array(payload.length);
+  for (let i = 0; i < payload.length; i++) {
+    const v = WEIGHT_ALPHABET.indexOf(payload[i]);
+    if (v < 0) throw new Error(`invalid weight character at ${i}`);
+    out[i] = v - 31;
   }
   return out;
 }
 
-/** Decode the embedded int8 payload into dequantized float32 layers. Done once per generator instance. */
+/** Decode the embedded int6 payload into dequantized float32 layers. Done once per generator instance. */
 export function decodeModel(spec: ModelSpec): DecodedLayer[] {
-  if (spec.format !== 1) throw new Error(`unsupported model format ${String(spec.format)}`);
+  if (spec.format !== 2) throw new Error(`unsupported model format ${String(spec.format)}`);
   if (spec.seedVersion !== SEED_VERSION) throw new Error(`model seedVersion ${String(spec.seedVersion)} != ${SEED_VERSION}`);
   if (spec.latent !== LATENT_DIM) throw new Error(`model latent ${String(spec.latent)} != ${LATENT_DIM}`);
   if (spec.layers[0]?.in !== spec.latent) throw new Error(`model layers[0].in ${String(spec.layers[0]?.in)} != latent ${String(spec.latent)}`);
-  const q = base64ToInt8(spec.weights);
+  const q = decodeInt6(spec.weights);
   const expected = spec.layers.reduce((n, l) => n + l.in * l.out, 0);
-  if (q.length !== expected) throw new Error(`weights payload has ${q.length} bytes, layers need ${expected}`);
+  if (q.length !== expected) throw new Error(`weights payload has ${q.length} values, layers need ${expected}`);
   const layers: DecodedLayer[] = [];
   let offset = 0;
   for (const layer of spec.layers) {

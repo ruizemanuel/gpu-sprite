@@ -4,19 +4,19 @@ export interface LayerSpec {
   in: number;
   out: number;
   activation: Activation;
-  /** Per-tensor symmetric int8 scale, float32-representable. */
+  /** Per-tensor symmetric int6 scale, float32-representable. */
   scale: number;
-  /** Float32-representable biases, length `out`. */
+  /** Float32-representable biases rounded to 3 decimals, length `out`. */
   bias: number[];
 }
 
 export interface ModelSpec {
-  format: 1;
+  format: 2;
   seedVersion: 1;
   latent: number;
   checkpoint: string;
   layers: LayerSpec[];
-  /** base64 of int8 weights, all layers concatenated, each row-major (out, in). */
+  /** One character per int6 weight (see `decode.ts`), all layers concatenated, each row-major (out, in). */
   weights: string;
 }
 

@@ -1,11 +1,11 @@
 {
   "checkpoint": "characters@d6b814721862",
-  "exported_at": "2026-09-23T00:23:55.336415+00:00",
+  "exported_at": "2026-09-23T01:47:30.313107+00:00",
   "gate": {
     "passed": true,
     "checks": {
       "uniqueness": {
-        "value": 0.993,
+        "value": 0.992,
         "threshold": 0.95,
         "op": ">=",
         "passed": true
@@ -17,7 +17,7 @@
         "passed": true
       },
       "components_fraction": {
-        "value": 0.647,
+        "value": 0.643,
         "threshold": 0.32919254658385094,
         "op": ">=",
         "passed": true
@@ -35,7 +35,7 @@
         "passed": true
       },
       "reconstruction": {
-        "value": 0.8795955882352942,
+        "value": 0.8791360294117647,
         "threshold": 0.8695955882352941,
         "op": ">=",
         "passed": true
@@ -44,9 +44,9 @@
     "checkpoint": "packages/training/runs/characters/best.pt",
     "objective": "vae",
     "seeds": 1000,
-    "recon_acc": 0.8795955882352942,
+    "recon_acc": 0.8791360294117647,
     "recon_floor": 0.8695955882352941,
-    "recon_floor_source": "first-promotion",
+    "recon_floor_source": "active",
     "decoder_parameters": 37248,
     "config": {
       "run": "characters",
@@ -66,6 +66,9 @@
   },
   "floors": {
     "reconstruction": 0.8695955882352941
+  },
+  "floors_by_dataset": {
+    "a61f626ae1a2ef64aaf4193e0ac3c9dc7401ceb5a11ce19e21b8d1d05d556366:efe21f1b26483697e0a8a23e63fab9c488aeb2c6e1f65d52c089f4f3cda3d8f5": 0.8695955882352941
   },
   "data": {
     "total_tiles": 1078,
@@ -110,17 +113,18 @@
     "decoder_parameters": 37248
   },
   "quantization": {
-    "scheme": "int8 symmetric per-tensor",
+    "scheme": "int6 symmetric per-tensor",
+    "bias_decimals": 3,
     "layers": [
       {
         "in": 32,
         "out": 128,
-        "scale": 0.009025861509144306
+        "scale": 0.03697691857814789
       },
       {
         "in": 128,
         "out": 256,
-        "scale": 0.004756568465381861
+        "scale": 0.01948658749461174
       }
     ]
   },
