@@ -81,8 +81,12 @@ try {
   type GameHook = { seed: number | null; creatures: number; turn: number; backend: string; result: string };
   const game = () => page.evaluate(() => (window as unknown as { __gpuSpriteGame?: GameHook }).__gpuSpriteGame);
   await page.goto(new URL("play.html?seed=42", url).href);
-  await page.keyboard.press("ArrowRight"); // before the bestiary exists: must be ignored
+  const bestiaryExistedBeforeKey = ((await game())?.creatures ?? 0) !== 0;
+  await page.keyboard.press("ArrowRight"); // before the bestiary exists: must be ignored, not queued
   await page.waitForFunction(() => (window as unknown as { __gpuSpriteGame?: GameHook }).__gpuSpriteGame?.creatures === 8, null, { timeout: 30_000 });
+  const afterEarlyKey = await game();
+  const earlyKey = bestiaryExistedBeforeKey ? "bestiary already built" : "ignored";
+  if (!bestiaryExistedBeforeKey && afterEarlyKey?.turn !== 0) failures.push(`early key was not ignored: turn ${afterEarlyKey?.turn}`);
   const generationText = await page.textContent("#generation");
   if (!/ on (cpu|webgpu)/.test(generationText ?? "")) failures.push(`generation line names no backend: ${generationText}`);
   for (let i = 0; i < 3; i++) await page.keyboard.press("Space");
@@ -91,7 +95,7 @@ try {
   for (const key of ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "d", "s"]) await page.keyboard.press(key);
   const bestiaryItems = await page.locator("#bestiary li").count();
   if (bestiaryItems !== 8) failures.push(`bestiary panel shows ${bestiaryItems} entries, expected 8`);
-  console.log(`game: ${generationText}; turn ${afterWaits?.turn}`);
+  console.log(`game: ${generationText}; turn ${afterWaits?.turn}; early key: ${earlyKey}`);
   await page.screenshot({ path: fileURLToPath(new URL("../../../test-results/website-game.png", import.meta.url)), fullPage: true });
 
   // An invalid seed is reported, never replaced by a random run.

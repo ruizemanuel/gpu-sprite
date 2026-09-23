@@ -67,6 +67,11 @@ function showMessage(text: string): void {
   publish();
 }
 
+/** The shared " in … ms on …" tail of both the success and failure generation lines. */
+function backendTail(run: BestiaryRun): string {
+  return ` in ${run.ms.toFixed(1)} ms on ${run.backend}${run.adapter ? ` (${run.adapter})` : ""}`;
+}
+
 async function startRun(seed: number): Promise<void> {
   const token = ++runToken;
   runSeed = seed;
@@ -81,17 +86,21 @@ async function startRun(seed: number): Promise<void> {
   try {
     run = await generateBestiary(seed, (seeds) => generator.generateMany(seeds), () => performance.now(), () => token === runToken);
   } catch (err) {
-    if (token === runToken) showMessage(`Could not generate sprites: ${(err as Error).message}`);
+    if (token === runToken) {
+      generation.textContent = "";
+      showMessage(`Could not generate sprites: ${(err as Error).message}`);
+    }
     return;
   }
   if (!run) return; // replaced by a newer run
   if (!run.bestiary) {
+    generation.textContent = `${run.candidates} candidates → no bestiary${backendTail(run)}`;
     showMessage("Could not build a bestiary for this seed");
     return;
   }
   backend = run.backend;
   bestiary = run.bestiary;
-  generation.textContent = `${run.candidates} candidates → ${1 + SPECIES_COUNT} creatures in ${run.ms.toFixed(1)} ms on ${run.backend}${run.adapter ? ` (${run.adapter})` : ""}`;
+  generation.textContent = `${run.candidates} candidates → ${1 + SPECIES_COUNT} creatures${backendTail(run)}`;
   game = newGame(seed, run.bestiary);
   mapCanvas.focus();
   draw();
@@ -115,6 +124,7 @@ window.addEventListener("keydown", (event) => {
   if (game.result !== "playing") {
     if (event.key === "r" || event.key === "R") retry();
     else if (event.key === "n" || event.key === "N") newRun();
+    else if (KEYS[event.key]) event.preventDefault();
     return;
   }
   const action = KEYS[event.key];
@@ -128,10 +138,14 @@ $("#retry").addEventListener("click", retry);
 $("#new-run").addEventListener("click", newRun);
 $("#new-run-end").addEventListener("click", newRun);
 copyLink.addEventListener("click", () => {
-  navigator.clipboard.writeText(location.href).then(
-    () => (copyLink.textContent = "Copied"),
-    () => (copyLink.textContent = "Copy failed"),
-  );
+  // `navigator.clipboard` is undefined on insecure origins; route that through the same failure path
+  // instead of throwing an unhandled error.
+  Promise.resolve()
+    .then(() => navigator.clipboard.writeText(location.href))
+    .then(
+      () => (copyLink.textContent = "Copied"),
+      () => (copyLink.textContent = "Copy failed"),
+    );
   setTimeout(() => (copyLink.textContent = "Copy link"), 1500);
 });
 
