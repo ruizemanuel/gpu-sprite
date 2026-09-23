@@ -40,6 +40,8 @@ export class Generator {
   private readonly backend: Backend;
   private cpu: CpuModel | undefined;
   private gpu: Promise<WebGpuModel> | undefined;
+  /** Set when creating the GPU model failed; `auto` then stays on the CPU instead of probing again. */
+  private gpuCreationFailed = false;
   private disposed = false;
 
   constructor(options: GenerateOptions = {}) {
@@ -86,26 +88,51 @@ export class Generator {
   }
 
   private gpuModel(): Promise<WebGpuModel> {
-    return (this.gpu ??= WebGpuModel.create(layers()));
+    if (this.gpu) return this.gpu;
+    const pending = WebGpuModel.create(layers());
+    this.gpu = pending;
+    void pending.then(
+      (gpu) => gpu.lost.then(() => this.forgetGpu(pending)),
+      () => this.forgetGpu(pending),
+    );
+    return pending;
+  }
+
+  /** Drops a failed or lost GPU model and releases its device, so a later call starts over. */
+  private forgetGpu(pending: Promise<WebGpuModel>): void {
+    if (this.gpu === pending) this.gpu = undefined;
+    void pending.then((g) => g.dispose(), () => undefined);
   }
 
   private async run(z: Float32Array, batch: number): Promise<GenerateResult> {
     // generateMany() already rejected an explicit "webgpu" backend without support.
-    let useGpu = this.backend === "webgpu";
-    if (!useGpu && this.backend === "auto" && batch >= AUTO_WEBGPU_MIN_BATCH && hasWebGpu()) {
+    if (this.backend === "webgpu") return this.runGpu(z, batch);
+    if (this.backend === "auto" && batch >= AUTO_WEBGPU_MIN_BATCH && !this.gpuCreationFailed && hasWebGpu()) {
       try {
-        await this.gpuModel();
-        useGpu = true;
+        return await this.runGpu(z, batch);
       } catch {
-        useGpu = false;
+        // Fall through: the batch runs on the CPU.
       }
     }
-    if (useGpu) {
-      const gpu = await this.gpuModel();
+    return { sprites: split(this.cpuModel().forward(z, batch), batch), backend: "cpu" };
+  }
+
+  private async runGpu(z: Float32Array, batch: number): Promise<GenerateResult> {
+    const pending = this.gpuModel();
+    let gpu: WebGpuModel;
+    try {
+      gpu = await pending;
+    } catch (err) {
+      this.gpuCreationFailed = true;
+      throw err;
+    }
+    try {
       const logits = await gpu.forward(z, batch);
       return { sprites: split(logits, batch), backend: "webgpu", adapter: gpu.adapterName };
+    } catch (err) {
+      this.forgetGpu(pending);
+      throw err;
     }
-    return { sprites: split(this.cpuModel().forward(z, batch), batch), backend: "cpu" };
   }
 }
 

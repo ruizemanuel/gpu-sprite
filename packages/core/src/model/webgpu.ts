@@ -28,6 +28,8 @@ function uploadF32(device: GPUDevice, data: Float32Array): GPUBuffer {
  */
 export class WebGpuModel {
   readonly adapterName: string;
+  /** The device's `lost` promise: resolves when the device is lost, including through `dispose()`. */
+  readonly lost: Promise<GPUDeviceLostInfo>;
   private readonly device: GPUDevice;
   private readonly pipeline: GPUComputePipeline;
   private readonly layers: GpuLayer[];
@@ -51,29 +53,37 @@ export class WebGpuModel {
     this.inputDim = layers[0].in;
     this.outputDim = layers[layers.length - 1].out;
     this.maxDim = Math.max(this.inputDim, ...layers.map((l) => l.out));
-    for (const layer of layers) {
-      if (layer.out > WORKGROUP_SIZE) throw new Error(`layer width ${layer.out} exceeds workgroup size ${WORKGROUP_SIZE}`);
-    }
+    this.lost = device.lost;
   }
 
   static async create(layers: DecodedLayer[]): Promise<WebGpuModel> {
     if (!hasWebGpu()) throw new Error("WebGPU is not available in this environment");
+    // Checked before a device exists, so a model the shader cannot run never holds one.
+    for (const layer of layers) {
+      if (layer.out > WORKGROUP_SIZE) throw new Error(`layer width ${layer.out} exceeds workgroup size ${WORKGROUP_SIZE}`);
+    }
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error("WebGPU: no adapter available");
     const device = await adapter.requestDevice();
-    const info = (adapter as unknown as { info?: GPUAdapterInfo }).info;
-    const adapterName = [info?.vendor, info?.architecture, info?.device, info?.description].filter(Boolean).join(" ") || "unknown adapter";
-    const module = device.createShaderModule({ code: DENSE_SHADER });
-    const pipeline = device.createComputePipeline({ layout: "auto", compute: { module, entryPoint: "main" } });
-    const gpuLayers: GpuLayer[] = layers.map((l) => ({
-      in: l.in,
-      out: l.out,
-      relu: l.relu,
-      weights: uploadF32(device, l.weights),
-      bias: uploadF32(device, l.bias),
-      params: device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
-    }));
-    return new WebGpuModel(device, pipeline, gpuLayers, adapterName);
+    try {
+      const info = (adapter as unknown as { info?: GPUAdapterInfo }).info;
+      const adapterName = [info?.vendor, info?.architecture, info?.device, info?.description].filter(Boolean).join(" ") || "unknown adapter";
+      const module = device.createShaderModule({ code: DENSE_SHADER });
+      // The async form rejects on a shader or pipeline error instead of returning an invalid pipeline.
+      const pipeline = await device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "main" } });
+      const gpuLayers: GpuLayer[] = layers.map((l) => ({
+        in: l.in,
+        out: l.out,
+        relu: l.relu,
+        weights: uploadF32(device, l.weights),
+        bias: uploadF32(device, l.bias),
+        params: device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }),
+      }));
+      return new WebGpuModel(device, pipeline, gpuLayers, adapterName);
+    } catch (err) {
+      device.destroy();
+      throw err;
+    }
   }
 
   forward(input: Float32Array, batch: number): Promise<Float32Array> {

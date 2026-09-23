@@ -1,4 +1,4 @@
-import { defineGenerator, LATENT_DIM } from "../../src/index.ts";
+import { defineGenerator, LATENT_DIM, type GenerateResult, type Sprite } from "../../src/index.ts";
 import { CpuModel } from "../../src/model/cpu.ts";
 import { decodeModel } from "../../src/model/decode.ts";
 import { hasWebGpu, WebGpuModel } from "../../src/model/webgpu.ts";
@@ -69,25 +69,73 @@ export async function runParity(seeds: number[]): Promise<ParityReport> {
   };
 }
 
+function sameSprites(a: Sprite[], b: Sprite[]): boolean {
+  return a.length === b.length && a.every((s, i) => s.pixels.every((p, j) => p === b[i].pixels[j]));
+}
+
 export async function runApi(seeds: number[]): Promise<{ backend: string; adapter?: string; identical: boolean; count: number }> {
   const gpuGen = defineGenerator({ backend: "webgpu" });
   const cpuGen = defineGenerator({ backend: "cpu" });
   const g = await gpuGen.generateMany(seeds);
   const c = await cpuGen.generateMany(seeds);
-  let identical = g.sprites.length === c.sprites.length;
-  for (let i = 0; identical && i < g.sprites.length; i++) {
-    const p = g.sprites[i].pixels;
-    const q = c.sprites[i].pixels;
-    for (let j = 0; j < p.length; j++) {
-      if (p[j] !== q[j]) {
-        identical = false;
-        break;
-      }
-    }
-  }
+  const identical = sameSprites(g.sprites, c.sprites);
   gpuGen.dispose();
   cpuGen.dispose();
   return { backend: g.backend, adapter: g.adapter, identical, count: g.sprites.length };
+}
+
+export interface RecoveryReport {
+  /** Backend of each call, in order: auto, auto right after a device loss, auto, webgpu, webgpu after a device loss. */
+  backends: string[];
+  /** Every call's sprites equal the CPU's. */
+  identical: boolean;
+  devices: number;
+}
+
+/**
+ * Device loss on real hardware, simulated with `destroy()` on the device a generator holds:
+ * `auto` must not reject and must return to the GPU on a new device, and explicit `webgpu`
+ * must work again after the loss. Devices are observed by wrapping `GPUAdapter.requestDevice`.
+ */
+export async function runRecovery(seeds: number[]): Promise<RecoveryReport> {
+  const devices: GPUDevice[] = [];
+  const requestDevice = GPUAdapter.prototype.requestDevice;
+  GPUAdapter.prototype.requestDevice = async function (this: GPUAdapter, descriptor?: GPUDeviceDescriptor) {
+    const device = await requestDevice.call(this, descriptor);
+    devices.push(device);
+    return device;
+  };
+  const cpuGen = defineGenerator({ backend: "cpu" });
+  const autoGen = defineGenerator({ backend: "auto" });
+  const gpuGen = defineGenerator({ backend: "webgpu" });
+  const loseNewestDevice = async () => {
+    const device = devices[devices.length - 1];
+    device.destroy();
+    await device.lost;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  try {
+    const expected = await cpuGen.generateMany(seeds);
+    const results: GenerateResult[] = [];
+    results.push(await autoGen.generateMany(seeds));
+    devices[devices.length - 1].destroy();
+    results.push(await autoGen.generateMany(seeds));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    results.push(await autoGen.generateMany(seeds));
+    results.push(await gpuGen.generateMany(seeds));
+    await loseNewestDevice();
+    results.push(await gpuGen.generateMany(seeds));
+    return {
+      backends: results.map((r) => r.backend),
+      identical: results.every((r) => sameSprites(r.sprites, expected.sprites)),
+      devices: devices.length,
+    };
+  } finally {
+    GPUAdapter.prototype.requestDevice = requestDevice;
+    cpuGen.dispose();
+    autoGen.dispose();
+    gpuGen.dispose();
+  }
 }
 
 /** Median `generateMany` wall time per backend for one batch size, in milliseconds. */
